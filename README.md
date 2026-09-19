@@ -1,13 +1,12 @@
 # @corbits/system-one
 
 A typed-decision evaluation client for System One (Jev-class) models: ask
-choice/score/boolean questions over a JSON state record and get back typed
+choice/score/noul questions over a JSON state record and get back typed
 decisions — or a typed fallback when the backend is unreachable. Endpoint
-differences (official, gateway, custom) are config, not forked code.
-
-> Scaffold status: the surface below is aspirational — `evaluate()` throws a
-> typed `not-implemented` error until the evaluate-core step lands. Schemas,
-> config shapes, and the error taxonomy are real and validated by tests.
+differences (official, gateway, custom) are config, not forked code. The wire
+follows the documented Jev contract: questions serialize to an id-keyed map
+with a required `instructions` string and per-kind `criteria`, and answers
+arrive in an `answers` map keyed by the same ids.
 
 ## Install
 
@@ -29,9 +28,23 @@ import { evaluate } from "@corbits/system-one";
 const result = await evaluate({
   state: { failedAttempts: 2, deviceClass: "iot" },
   questions: [
-    { kind: "choice", id: "route", options: ["allow", "step-up", "deny"] },
-    { kind: "score", id: "risk", min: 0, max: 100 },
-    { kind: "boolean", id: "escalate" },
+    {
+      id: "route",
+      type: "choice",
+      instructions: "What permission decision does this request warrant?",
+      criteria: { allow: "Low-risk request", deny: "Refuse the request" },
+    },
+    {
+      id: "risk",
+      type: "score",
+      instructions: "Rate the permission risk.",
+      criteria: ["Low risk", "Moderate risk", "High risk", "Critical risk"],
+    },
+    {
+      id: "escalate",
+      type: "boolean",
+      instructions: "Must this request be escalated for human approval?",
+    },
   ],
 });
 
@@ -46,16 +59,23 @@ if (result.fallback) {
 ## Endpoint override
 
 `EvaluateConfig.endpoint` selects the backend: `official` (the default when
-omitted), `gateway` (the proxy endpoint, with `GATEWAY_QUIRKS` applied), or
-`custom` with an explicit `url`. An optional `model` pins the model id per
-evaluation.
+omitted — the documented Jev systemone route with model `jev-latest`),
+`gateway` (the Vercel AI Gateway proxy with model `typesafe-ai/jev`), or
+`custom` with an explicit `url` (model defaults to `typesafe-ai/jev`). An
+optional `model` pins the model id per evaluation:
 
 ```ts
 await evaluate({
   state: {},
-  questions: [{ kind: "boolean", id: "escalate" }],
+  questions: [
+    {
+      id: "escalate",
+      type: "boolean",
+      instructions: "Must this request be escalated?",
+    },
+  ],
   config: {
-    endpoint: { kind: "gateway", model: "jev-1" },
+    endpoint: { kind: "custom", url: "https://jev.internal.example/evaluate" },
     timeoutMs: 5000,
   },
 });
@@ -63,27 +83,42 @@ await evaluate({
 
 ## Auth precedence
 
-1. An explicit `apiKey` in `EvaluateConfig`.
-2. The `SYSTEM_ONE_API_KEY` environment variable.
-3. No key anywhere → a `FallbackResult` with reason `'no-key'` (missing auth
+1. A non-empty explicit `apiKey` in `EvaluateConfig` (an empty string falls
+   through to the environment instead of shadowing it).
+2. The endpoint's environment key: `TYPESAFE_API_KEY` for `official`,
+   `AI_GATEWAY_API_KEY` then `VERCEL_OIDC_TOKEN` for `gateway`. A TypeSafe
+   key never authenticates to the gateway and vice versa.
+3. The legacy `SYSTEM_ONE_API_KEY` fallback (and the key for `custom`).
+4. No key anywhere → a `FallbackResult` with reason `'no-key'` (missing auth
    never throws; it is data, like every other fallback).
 
 ## Timeout / fallback semantics
 
-`timeoutMs` bounds one evaluation round trip (the built-in default, applied
-when omitted, is fixed in the evaluate-core step). When the bound is hit —
-or the backend is unreachable, returns an HTTP error, or returns output that
-fails schema validation — `evaluate` resolves to a `FallbackResult` carrying
-the `reason`, `latencyMs`, the `backendAttempted`, and `httpStatus` when an
-HTTP exchange produced one. Only scaffold-time misuse (calling the
-not-yet-implemented `evaluate`) throws, as a `SystemOneError`.
+`timeoutMs` bounds one evaluation round trip. The built-in default, applied
+when omitted, is `DEFAULT_TIMEOUT_MS` — 1500ms. A `timeoutMs` that is not a
+finite number >= 0 falls back to `DEFAULT_TIMEOUT_MS` rather than throwing.
+No pilot SLO is published,
+so the default is a tight interactive budget: fail fast to a typed fallback
+rather than hang the caller. Callers with a different budget override it
+per call via `EvaluateConfig.timeoutMs`. When the bound is hit — or the
+backend is unreachable, returns an HTTP error, or returns output that
+fails strict validation — `evaluate` resolves to a `FallbackResult`
+carrying the `reason`, `latencyMs`, the `backendAttempted`, and
+`httpStatus` when an HTTP exchange produced one. Only caller-side misuse
+(invalid input, a `custom` endpoint without a `url`) throws, as a typed
+`SystemOneError`.
 
 ## Telemetry
 
-Every evaluation emits `SystemOneTelemetryEvent`s — `evaluate.start`,
-`evaluate.success`, `evaluate.fallback` — carrying `backend`, `modelId`,
-`latencyMs`, and the fallback `reason` when one applies. The sink that ships
-these is decided in the evaluate-core step.
+Each evaluation that passes input validation and endpoint resolution emits
+`SystemOneTelemetryEvent`s — `evaluate.start`, `evaluate.success`,
+`evaluate.fallback` — carrying `backend`, `modelId`, `latencyMs`, and the
+fallback `reason` when one applies. Caller-side misuse that throws before
+any event is recorded (invalid input, a `custom` endpoint without a `url`)
+emits none. There is no sink:
+events buffer to an in-memory ring (capped at
+`MAX_BUFFERED_TELEMETRY_EVENTS`, oldest dropped past the cap) that the host
+drains with `drainTelemetryEvents`. Events never carry key material.
 
 ## API
 
@@ -104,11 +139,14 @@ documented individually in `src/schemas.ts`.
 
 ## Not supported
 
-- `evaluate()`, the POST transport, and the `ProviderAdapter` wiring are
-  stubs until the evaluate-core step (they throw `not-implemented`).
-- The `Decision.distribution` wire shape is `unknown` until the backend
-  contract lands.
-- The telemetry sink is undecided.
+- Publish: the package is not published to a registry yet.
+- Host seam: no host-side wiring is prescribed — a credential-store hook
+  beyond per-call key / environment keys, and forwarding of drained
+  telemetry to a host sink, are host concerns.
+- Parity harness: no recorded vendor fixtures or live-backend parity run —
+  the wire contract is encoded from the documented Jev shape, with strict
+  validation routing mismatches to fallback. Seven keyed live cases ship in
+  the suite and skip cleanly without credentials.
 
 ## License
 

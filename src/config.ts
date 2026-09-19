@@ -1,5 +1,8 @@
 import { type } from "arktype";
 
+import { SystemOneError } from "./errors";
+import type { EndpointConfig } from "./schemas";
+
 // ---------------------------------------------------------------------------
 // Quirks
 // ---------------------------------------------------------------------------
@@ -20,10 +23,90 @@ export const SystemOneQuirks = type({
 });
 export type SystemOneQuirks = typeof SystemOneQuirks.infer;
 
-// TODO(evaluate-core): fill in the official endpoint quirks (base URL,
-// default model) once the backend contract lands.
-export const SYSTEM_ONE_DEFAULT_QUIRKS: SystemOneQuirks = {};
+// The official System One endpoint: the documented Jev systemone route with
+// the stable model alias. Callers needing the proxied route use `gateway`;
+// callers with their own deployment use `custom` with an explicit `url`.
+export const SYSTEM_ONE_DEFAULT_QUIRKS: SystemOneQuirks = {
+  baseUrl: "https://api.typesafe.ai/v1/systemone",
+  model: "jev-latest",
+};
 
-// TODO(evaluate-core): fill in the gateway endpoint quirks (gateway base URL,
-// header routing) once the gateway contract lands.
-export const GATEWAY_QUIRKS: SystemOneQuirks = {};
+// The Vercel AI Gateway proxy for the Jev model, TypeSafe-compatible REST
+// shape. Callers select it per call with `endpoint: { kind: "gateway" }`.
+export const GATEWAY_QUIRKS: SystemOneQuirks = {
+  baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1/systemone",
+  model: "typesafe-ai/jev",
+};
+
+// Credential sources, one per endpoint: a TypeSafe key never authenticates
+// to the gateway and a gateway key never authenticates to TypeSafe direct,
+// so each endpoint reads its own names. `SYSTEM_ONE_API_KEY` stays as the
+// legacy universal fallback (and the key for `custom` endpoints).
+export const TYPESAFE_API_KEY_ENV = "TYPESAFE_API_KEY";
+export const GATEWAY_API_KEY_ENV = "AI_GATEWAY_API_KEY";
+export const GATEWAY_OIDC_ENV = "VERCEL_OIDC_TOKEN";
+export const SYSTEM_ONE_API_KEY_ENV = "SYSTEM_ONE_API_KEY";
+
+// ---------------------------------------------------------------------------
+// Edge defaults and endpoint resolution
+// ---------------------------------------------------------------------------
+//
+// Defaults resolve here, at the `evaluate` edge, never inside a schema:
+// schemas parse, they don't fill in defaults.
+
+/**
+ * Default bound for one evaluation round trip in milliseconds. 1500ms: a
+ * single non-streaming POST over an already-warm connection should answer
+ * far inside a second, and there is no published pilot SLO to calibrate
+ * against yet — so the default fails fast to a typed `FallbackResult`
+ * instead of holding the caller's round trip hostage. Callers with slower
+ * backends (or a custom endpoint across regions) set `timeoutMs` per call.
+ */
+export const DEFAULT_TIMEOUT_MS = 1500;
+
+/** One resolved evaluation target: the URL to POST, the model to send. */
+export type ResolvedEndpoint = {
+  url: string;
+  backend: "system-one" | "gateway" | "custom";
+  model?: string;
+};
+
+/**
+ * Resolves an evaluation endpoint to a concrete POST target. A per-call
+ * `endpoint` wins over the package default (`official`); `custom` must
+ * carry its own `url` and throws a typed `SystemOneError` when it does
+ * not. A `custom` target keeps the `'custom'` backend label so telemetry
+ * distinguishes caller-routed traffic from the official endpoint —
+ * `'gateway'` is reserved for the proxy quirks path.
+ */
+export function resolveEndpoint(endpoint?: EndpointConfig): ResolvedEndpoint {
+  const kind = endpoint?.kind ?? "official";
+  if (kind === "custom") {
+    const url = endpoint?.url;
+    if (url === undefined || url === "") {
+      throw new SystemOneError(
+        "config-error",
+        'evaluate: endpoint kind "custom" requires an explicit url',
+      );
+    }
+    const resolved: ResolvedEndpoint = { url, backend: "custom" };
+    if (endpoint?.model !== undefined) resolved.model = endpoint.model;
+    return resolved;
+  }
+  const quirks =
+    kind === "gateway" ? GATEWAY_QUIRKS : SYSTEM_ONE_DEFAULT_QUIRKS;
+  const url = quirks.baseUrl;
+  if (url === undefined || url === "") {
+    throw new SystemOneError(
+      "backend-unreachable",
+      `evaluate: no baseUrl configured for endpoint kind "${kind}"`,
+    );
+  }
+  const resolved: ResolvedEndpoint = {
+    url,
+    backend: kind === "gateway" ? "gateway" : "system-one",
+  };
+  const model = endpoint?.model ?? quirks.model;
+  if (model !== undefined) resolved.model = model;
+  return resolved;
+}

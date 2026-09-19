@@ -24,7 +24,6 @@ import {
   ScoreQuestion,
   SYSTEM_ONE_DEFAULT_QUIRKS,
   SYSTEM_ONE_PROVIDER,
-  SystemOneError,
   SystemOneTelemetryEvent,
 } from "./index";
 
@@ -34,57 +33,88 @@ describe("public entry", () => {
     expect(typeof createSystemOneAdapter).toBe("function");
     expect(typeof postEvaluate).toBe("function");
     expect(typeof recordTelemetryEvent).toBe("function");
+    expect(typeof SYSTEM_ONE_PROVIDER).toBe("string");
     expect(SYSTEM_ONE_PROVIDER).toBe("system-one");
-    expect(SYSTEM_ONE_DEFAULT_QUIRKS).toEqual({});
-    expect(GATEWAY_QUIRKS).toEqual({});
+    expect(typeof SYSTEM_ONE_DEFAULT_QUIRKS.baseUrl).toBe("string");
+    expect(typeof SYSTEM_ONE_DEFAULT_QUIRKS.model).toBe("string");
+    expect(typeof GATEWAY_QUIRKS.baseUrl).toBe("string");
+    expect(GATEWAY_QUIRKS.baseUrl).toContain("gateway");
+    expect(typeof GATEWAY_QUIRKS.model).toBe("string");
   });
 
-  test("evaluate throws a typed not-implemented error until core lands", async () => {
+  test("evaluate fail-closes to a no-key fallback when keyless", async () => {
     const parsed = EvaluateInput({
       state: { failedAttempts: 2 },
-      questions: [{ kind: "choice", id: "route", options: ["allow", "deny"] }],
+      questions: [
+        {
+          id: "route",
+          type: "choice",
+          instructions: "Route it?",
+          criteria: { allow: "Low risk", deny: "No" },
+        },
+      ],
     });
     expect(parsed instanceof type.errors).toBe(false);
     if (parsed instanceof type.errors) throw new Error(parsed.summary);
-    const result = await evaluate(parsed).catch((e: unknown) => e);
-    expect(result).toBeInstanceOf(SystemOneError);
-    if (result instanceof SystemOneError)
-      expect(result.code).toBe("not-implemented");
+    const saved = process.env["SYSTEM_ONE_API_KEY"];
+    delete process.env["SYSTEM_ONE_API_KEY"];
+    try {
+      const result = await evaluate(parsed);
+      if (result.fallback !== true) throw new Error("expected a fallback");
+      expect(result.reason).toBe("no-key");
+    } finally {
+      if (saved === undefined) delete process.env["SYSTEM_ONE_API_KEY"];
+      else process.env["SYSTEM_ONE_API_KEY"] = saved;
+    }
   });
 });
 
 describe("schemas", () => {
-  test("choice requires at least two options", () => {
+  test("choice requires one to 255 criteria options", () => {
     const ok = ChoiceQuestion({
-      kind: "choice",
       id: "route",
-      options: ["allow", "deny"],
+      type: "choice",
+      instructions: "Route it?",
+      criteria: { allow: "Low risk", deny: "No" },
     });
     expect(ok instanceof type.errors).toBe(false);
-    const one = ChoiceQuestion({
-      kind: "choice",
+    const none = ChoiceQuestion({
       id: "route",
-      options: ["allow"],
+      type: "choice",
+      instructions: "Route it?",
+      criteria: {},
     });
-    expect(one instanceof type.errors).toBe(true);
+    expect(none instanceof type.errors).toBe(true);
   });
 
   test("score and boolean parse", () => {
     const score = ScoreQuestion({
-      kind: "score",
       id: "risk",
-      min: 0,
-      max: 100,
+      type: "score",
+      instructions: "Rate it?",
+      criteria: ["Low", "High"],
     });
     expect(score instanceof type.errors).toBe(false);
-    const boolean = BooleanQuestion({ kind: "boolean", id: "escalate" });
+    const boolean = BooleanQuestion({
+      id: "escalate",
+      type: "boolean",
+      instructions: "Gate it?",
+    });
     expect(boolean instanceof type.errors).toBe(false);
   });
 
-  test("question union discriminates on kind", () => {
-    const ok = Question({ kind: "boolean", id: "escalate" });
+  test("question union discriminates on type", () => {
+    const ok = Question({
+      id: "escalate",
+      type: "boolean",
+      instructions: "Gate it?",
+    });
     expect(ok instanceof type.errors).toBe(false);
-    const bad = Question({ kind: "rank", id: "escalate" });
+    const bad = Question({
+      id: "escalate",
+      type: "rank",
+      instructions: "Gate it?",
+    });
     expect(bad instanceof type.errors).toBe(true);
   });
 
@@ -93,14 +123,21 @@ describe("schemas", () => {
     expect(empty instanceof type.errors).toBe(true);
     const full = EvaluateInput({
       state: { deviceClass: "iot" },
-      questions: [{ kind: "score", id: "risk", min: 0, max: 100 }],
+      questions: [
+        {
+          id: "risk",
+          type: "score",
+          instructions: "Rate it?",
+          criteria: ["Low", "High"],
+        },
+      ],
       config: { timeoutMs: 5000 },
     });
     expect(full instanceof type.errors).toBe(false);
   });
 
   test("decision confidence is 0..1, never clamped", () => {
-    const base = { id: "risk", kind: "score", value: 42 };
+    const base = { id: "risk", type: "score", score: 1.5 };
     const lo = Decision({ ...base, confidence: 0 });
     expect(lo instanceof type.errors).toBe(false);
     const hi = Decision({ ...base, confidence: 1 });
@@ -112,7 +149,7 @@ describe("schemas", () => {
   test("evaluate result parses, fallback flag is literal false", () => {
     const ok = EvaluateResult({
       decisions: [
-        { id: "route", kind: "choice", value: "allow", confidence: 0.9 },
+        { id: "route", type: "choice", choice: "allow", confidence: 0.9 },
       ],
       modelId: "jev-1",
       backend: "system-one",
