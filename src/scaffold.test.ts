@@ -34,7 +34,7 @@ describe("public entry", () => {
     expect(typeof postEvaluate).toBe("function");
     expect(typeof recordTelemetryEvent).toBe("function");
     expect(typeof SYSTEM_ONE_PROVIDER).toBe("string");
-    expect(SYSTEM_ONE_PROVIDER).toBe("system-one");
+    expect(SYSTEM_ONE_PROVIDER).toBe("corbits-system-one");
     expect(typeof SYSTEM_ONE_DEFAULT_QUIRKS.baseUrl).toBe("string");
     expect(typeof SYSTEM_ONE_DEFAULT_QUIRKS.model).toBe("string");
     expect(typeof GATEWAY_QUIRKS.baseUrl).toBe("string");

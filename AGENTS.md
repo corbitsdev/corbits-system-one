@@ -28,7 +28,7 @@ results — as arktype schemas. `src/index.ts` is the sole public entry:
   resolution, strict answer cross-validation, and the fallback mapping.
 - `src/adapter.ts` — `createSystemOneAdapter`: an Interchange
   `ProviderAdapter` bridge (buildRequest/parseResponse/parseJSONResponse/
-  extractRetryAfterMs) plus the `SYSTEM_ONE_PROVIDER` id.
+  extractRetryAfterMs) plus the `SYSTEM_ONE_PROVIDER` id (`corbits-system-one`).
 - `src/errors.ts` — the typed error taxonomy (`SystemOneError`,
   `SystemOneErrorCode`, `TimeoutError`, `NetworkError`, `HttpError`).
 - `src/telemetry.ts` — the telemetry event shape and the bounded in-memory

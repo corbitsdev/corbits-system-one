@@ -24,15 +24,17 @@ forked code.
 Interchange agents and workflows already speak providers. This package
 is the System One adapter for that surface:
 
-- **One provider id.** `SYSTEM_ONE_PROVIDER` (`"system-one"`) slots
-  into `defineAgent` / workflow inference sources the same way
-  Anthropic or an OpenAI-compatible relay does.
+- **One provider id.** `SYSTEM_ONE_PROVIDER` is `"corbits-system-one"`
+  — same naming as the other Corbits libraries, not a generic
+  `"system-one"`. Use it in `defineAgent` / workflow inference sources
+  the way you would `"anthropic"`.
 - **Questions on the call.** Pass Jev questions (and optional state)
   through `providerOptions.systemOne`. The transcript is the default
   state when you omit it.
-- **Fail closed, stay typed.** Invalid input throws. Timeouts, HTTP
-  errors, and off-schema answers resolve to a `FallbackResult` —
-  never an untyped throw from the backend path.
+- **Two output shapes.** Direct `evaluate()` returns an
+  `EvaluateResult` or `FallbackResult`. The adapter unwraps the same
+  decisions into Interchange `inference.text.delta` / `inference.usage`
+  events so an agent step can consume them.
 - **Host-owned credentials.** The adapter sends Interchange's bearer
   sentinel; the harness injects the real key. Peers are
   `@intx/inference` and `@intx/types` — one copy, the host's.
@@ -46,18 +48,9 @@ Interchange copies.
 bun add @corbits/system-one
 ```
 
-### Agent step
-
-Register the adapter, point the agent at `system-one`, and put the
-decision questions on the send:
+Shared questions used below:
 
 ```ts
-import { createAgent, defineAgent } from "@intx/agent";
-import {
-  createSystemOneAdapter,
-  SYSTEM_ONE_PROVIDER,
-} from "@corbits/system-one";
-
 const questions = [
   {
     id: "route",
@@ -71,6 +64,82 @@ const questions = [
     instructions: "Must this request be escalated for human approval?",
   },
 ];
+```
+
+### Direct `evaluate()` — typed result object
+
+No Interchange runtime. You get a discriminated result: success
+(`fallback: false`) or a typed fallback (`fallback: true`). Boolean
+questions answer as native `noul` (0..1).
+
+```ts
+import { evaluate } from "@corbits/system-one";
+
+const result = await evaluate({
+  state: { action: "deploy", env: "production" },
+  questions,
+  config: { apiKey: process.env.TYPESAFE_API_KEY },
+});
+```
+
+Success looks like:
+
+```ts
+{
+  fallback: false,
+  backend: "system-one", // official endpoint; "gateway" | "custom" otherwise
+  modelId: "jev-1.13.0",
+  latencyMs: 412,
+  usage: { inputTokens: 296, outputTokens: 20 },
+  decisions: [
+    {
+      id: "route",
+      type: "choice",
+      choice: "deny",
+      confidence: 0.86,
+      probabilities: { allow: 0.14, deny: 0.86 },
+    },
+    {
+      id: "escalate",
+      type: "noul",
+      noul: 0.91,
+    },
+  ],
+}
+```
+
+No key / timeout / HTTP / parse failure looks like:
+
+```ts
+{
+  fallback: true,
+  reason: "no-key", // or "timeout" | "network" | "http-error" | "parse-error" | "backend-unreachable"
+  latencyMs: 2,
+  backendAttempted: "https://api.typesafe.ai/...",
+  detail: "no API key in config.apiKey, TYPESAFE_API_KEY, or SYSTEM_ONE_API_KEY",
+}
+```
+
+Invalid caller input (bad questions, custom endpoint without `url`)
+still **throws** a `SystemOneError` — that is not a fallback.
+
+Auth: `config.apiKey`, else `TYPESAFE_API_KEY` (official),
+`AI_GATEWAY_API_KEY` / `VERCEL_OIDC_TOKEN` (gateway), else
+`SYSTEM_ONE_API_KEY`. Endpoint: omit for official (`jev-latest`);
+`{ kind: "gateway" }`; `{ kind: "custom", url }`.
+
+### Adapter — Interchange events, same decisions
+
+`createSystemOneAdapter()` is a `ProviderAdapter`. Register
+`"corbits-system-one"`, put questions on the call. The harness
+streams events instead of returning `EvaluateResult`.
+
+```ts
+import { createAgent, defineAgent } from "@intx/agent";
+import {
+  createSystemOneAdapter,
+  SYSTEM_ONE_PROVIDER, // "corbits-system-one"
+} from "@corbits/system-one";
 
 const def = defineAgent({
   id: "permission-gate",
@@ -90,7 +159,6 @@ const agent = await createAgent(def, {
     apiKey: process.env.TYPESAFE_API_KEY,
     adapter: createSystemOneAdapter(),
   },
-  // storage, audit, authorize, directors — same as any Interchange agent
 });
 
 const { reply } = await agent.send("Deploy to production?", {
@@ -98,12 +166,48 @@ const { reply } = await agent.send("Deploy to production?", {
 });
 ```
 
-Decisions come back as `inference.text.delta` events (JSON per
-question) plus `inference.usage` when the backend reports tokens.
+What the adapter emits (what `reply` is assembled from):
+
+```ts
+[
+  {
+    type: "inference.text.delta",
+    data: {
+      index: 0,
+      token:
+        '{"id":"route","type":"choice","choice":"deny","confidence":0.86,"probabilities":{"allow":0.14,"deny":0.86}}',
+    },
+  },
+  {
+    type: "inference.text.delta",
+    data: {
+      index: 1,
+      token: '{"id":"escalate","type":"noul","noul":0.91}',
+    },
+  },
+  {
+    type: "inference.usage",
+    data: {
+      usage: {
+        input: 296,
+        output: 20,
+        cacheRead: 0,
+        cacheWrite: 0,
+        thinking: 0,
+      },
+    },
+  },
+];
+```
+
+`JSON.parse` each `token` and you have the same decision objects as
+`result.decisions`. There is no `fallback` flag on this path: a bad
+wire body is a `ProtocolMismatchError`; auth/retry stay with the
+harness (`retry-after` is surfaced for 429/529).
 
 ### Workflow step
 
-Same provider, same options, on a workflow inference step:
+Same provider and options bag:
 
 ```ts
 import { defineWorkflow } from "@intx/workflow";
@@ -141,54 +245,23 @@ export const refundGate = defineWorkflow({
 });
 ```
 
-### Direct `evaluate()`
-
-When you are not inside an Interchange run, call the client:
-
-```ts
-import { evaluate } from "@corbits/system-one";
-
-const result = await evaluate({
-  state: { failedAttempts: 2, deviceClass: "iot" },
-  questions: [
-    {
-      id: "escalate",
-      type: "boolean",
-      instructions: "Must this request be escalated?",
-    },
-  ],
-});
-
-if (!result.fallback) {
-  const decision = result.decisions[0];
-  if (decision?.type === "boolean") {
-    decision.noul; // true | false
-  }
-}
-```
-
-Auth: explicit `config.apiKey`, else `TYPESAFE_API_KEY` (official),
-`AI_GATEWAY_API_KEY` / `VERCEL_OIDC_TOKEN` (gateway), else
-`SYSTEM_ONE_API_KEY`. Missing auth is a `'no-key'` fallback, not a
-throw.
-
-Endpoint: omit `config.endpoint` for official (`jev-latest`);
-`{ kind: "gateway" }` for the Vercel AI Gateway; `{ kind: "custom",
-url }` for a private route.
+The step's inference output is the same event list: one text delta
+whose token is `{"id":"approve","type":"noul","noul":0.2}`, then
+usage.
 
 ## How it works
 
 - **Wire.** Live Jev contract ([docs.typesafe.ai](https://docs.typesafe.ai)):
   `state` is string | object | array; questions go out as an id-keyed
   map; answers come back the same way.
-- **Adapter.** `createSystemOneAdapter()` is an Interchange
-  `ProviderAdapter`. Transcript → evaluation state; decisions → text
-  deltas; `retry-after` is honored on 429/529.
+- **Adapter.** Transcript → evaluation state; each decision →
+  `inference.text.delta`; token counts → `inference.usage`.
 - **Schemas.** Every trust boundary is arktype (`src/schemas.ts`).
   Confidence is narrowed, not clamped. Public surface is
   `src/index.ts` only.
-- **Telemetry.** `evaluate.start` / `.success` / `.fallback` buffer
-  in-memory (`drainTelemetryEvents`). No keys in events.
+- **Telemetry.** Direct `evaluate()` records `evaluate.start` /
+  `.success` / `.fallback` in-memory (`drainTelemetryEvents`). No keys
+  in events.
 
 ## Development
 

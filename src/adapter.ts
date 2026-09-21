@@ -42,7 +42,7 @@ import {
 // sentinel and the host's harness injects the real credential.
 
 /** Provider id this package serves. */
-export const SYSTEM_ONE_PROVIDER = "system-one";
+export const SYSTEM_ONE_PROVIDER = "corbits-system-one";
 
 // Per-call Jev payload overrides via `InferenceOptions.providerOptions`.
 // `state` replaces the transcript-derived default; `questions` replaces the
