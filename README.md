@@ -87,7 +87,7 @@ Success looks like:
 ```ts
 {
   fallback: false,
-  backend: "system-one", // official endpoint; "gateway" | "custom" otherwise
+  backend: "corbits-system-one", // official endpoint; "gateway" | "custom" otherwise
   modelId: "jev-1.13.0",
   latencyMs: 412,
   usage: { inputTokens: 296, outputTokens: 20 },

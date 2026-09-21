@@ -67,7 +67,7 @@ export const DEFAULT_TIMEOUT_MS = 1500;
 /** One resolved evaluation target: the URL to POST, the model to send. */
 export type ResolvedEndpoint = {
   url: string;
-  backend: "system-one" | "gateway" | "custom";
+  backend: "corbits-system-one" | "gateway" | "custom";
   model?: string;
 };
 
@@ -103,7 +103,7 @@ export function resolveEndpoint(endpoint?: EndpointConfig): ResolvedEndpoint {
   }
   const resolved: ResolvedEndpoint = {
     url,
-    backend: kind === "gateway" ? "gateway" : "system-one",
+    backend: kind === "gateway" ? "gateway" : "corbits-system-one",
   };
   const model = endpoint?.model ?? quirks.model;
   if (model !== undefined) resolved.model = model;

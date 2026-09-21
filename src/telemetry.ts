@@ -19,7 +19,7 @@ import { FallbackReason } from "./schemas";
 /** One evaluation lifecycle event. */
 export const SystemOneTelemetryEvent = type({
   event: "'evaluate.start' | 'evaluate.success' | 'evaluate.fallback'",
-  backend: "'system-one' | 'gateway' | 'custom'",
+  backend: "'corbits-system-one' | 'gateway' | 'custom'",
   "modelId?": "string",
   latencyMs: "number",
   "reason?": FallbackReason,

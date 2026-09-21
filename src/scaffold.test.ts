@@ -177,7 +177,7 @@ describe("schemas", () => {
         },
       ],
       modelId: "jev-1",
-      backend: "system-one",
+      backend: "corbits-system-one",
       latencyMs: 12,
       fallback: false,
     });
@@ -185,7 +185,7 @@ describe("schemas", () => {
     const flagged = EvaluateResult({
       decisions: [],
       modelId: "jev-1",
-      backend: "system-one",
+      backend: "corbits-system-one",
       latencyMs: 12,
       fallback: true,
     });

@@ -265,7 +265,7 @@ export async function evaluate(
   if (rawApiKey !== undefined && rawApiKey !== "") {
     apiKey = rawApiKey;
     keySources = "config.apiKey";
-  } else if (endpoint.backend === "system-one") {
+  } else if (endpoint.backend === "corbits-system-one") {
     apiKey = envKey(TYPESAFE_API_KEY_ENV) ?? envKey(SYSTEM_ONE_API_KEY_ENV);
     keySources = `${TYPESAFE_API_KEY_ENV} or ${SYSTEM_ONE_API_KEY_ENV}`;
   } else if (endpoint.backend === "gateway") {

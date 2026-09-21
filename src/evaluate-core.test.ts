@@ -295,7 +295,7 @@ describe("evaluate — happy path", () => {
     expect(escalateDecision.noul).toBe(0.91);
     expect("confidence" in escalateDecision).toBe(false);
     expect(result.modelId).toBe("jev-1.13.0");
-    expect(result.backend).toBe("system-one");
+    expect(result.backend).toBe("corbits-system-one");
   });
 
   test("boolean alias maps to native noul on the wire", async () => {

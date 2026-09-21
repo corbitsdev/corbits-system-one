@@ -363,7 +363,7 @@ export type EvaluateResponseBody = typeof EvaluateResponseBody.infer;
 export const EvaluateResult = type({
   decisions: Decision.array(),
   modelId: "string",
-  backend: "'system-one' | 'gateway' | 'custom'",
+  backend: "'corbits-system-one' | 'gateway' | 'custom'",
   latencyMs: "number",
   "usage?": Usage,
   fallback: "false",
