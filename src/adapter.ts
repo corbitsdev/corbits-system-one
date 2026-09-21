@@ -20,9 +20,10 @@ import {
   toDecision,
   toWireQuestions,
   WireResponseBody,
-  JsonRecord,
-  Question,
+  QuestionList,
+  State,
   type EvaluateConfig,
+  type WireUsage,
 } from "./schemas";
 
 // ---------------------------------------------------------------------------
@@ -36,19 +37,20 @@ import {
 // through `providerOptions.systemOne` (`{ state?, questions? }`), validated
 // here with arktype. Decisions come back as `inference.text.delta` events
 // carrying each decision's JSON, followed by an `inference.usage` event —
-// the Jev protocol has no token counts, so usage is zeros. Auth never
-// touches key material here: the request carries the bearer sentinel and
-// the host's harness injects the real credential.
+// populated from the response's `usage` block when the backend reports one.
+// Auth never touches key material here: the request carries the bearer
+// sentinel and the host's harness injects the real credential.
 
 /** Provider id this package serves. */
 export const SYSTEM_ONE_PROVIDER = "system-one";
 
 // Per-call Jev payload overrides via `InferenceOptions.providerOptions`.
 // `state` replaces the transcript-derived default; `questions` replaces the
-// single-question default. Both are validated, never cast.
+// single-question default. Both are validated, never cast — `QuestionList`
+// carries the same non-empty/unique-id contract as `EvaluateInput`.
 const SystemOneProviderOptions = type({
-  "state?": JsonRecord,
-  "questions?": Question.array().atLeastLength(1),
+  "state?": State,
+  "questions?": QuestionList,
   "+": "reject",
 });
 
@@ -72,7 +74,7 @@ const ZERO_USAGE: TokenUsage = {
 // via `providerOptions.systemOne`: a conversation has no inherent Jev
 // questions, so the adapter asks the one boolean every transcript answers —
 // whether the turn responds — and lets the host interpret the decision.
-const DEFAULT_QUESTIONS: Question[] = [
+const DEFAULT_QUESTIONS: QuestionList = [
   {
     type: "boolean",
     id: "response",
@@ -93,7 +95,21 @@ function transcriptText(turns: ConversationTurn[]): string {
   return texts.join("\n");
 }
 
-function parseDecisions(body: string, provider: string): Decision[] {
+function toTokenUsage(usage: WireUsage | undefined): TokenUsage {
+  if (usage === undefined) return ZERO_USAGE;
+  return {
+    input: usage.input_tokens,
+    output: usage.output_tokens,
+    cacheRead: 0,
+    cacheWrite: 0,
+    thinking: 0,
+  };
+}
+
+function parseDecisions(
+  body: string,
+  provider: string,
+): { decisions: Decision[]; usage: WireUsage | undefined } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(body);
@@ -110,7 +126,7 @@ function parseDecisions(body: string, provider: string): Decision[] {
       parsed,
     );
   }
-  return Object.keys(envelope.answers).map((id) => {
+  const decisions = Object.keys(envelope.answers).map((id) => {
     const answer = envelope.answers[id];
     if (answer === undefined) {
       throw new ProtocolMismatchError(
@@ -118,8 +134,16 @@ function parseDecisions(body: string, provider: string): Decision[] {
         parsed,
       );
     }
-    return toDecision(id, answer);
+    try {
+      return toDecision(id, answer);
+    } catch (cause) {
+      throw new ProtocolMismatchError(
+        `${provider} parseJSONResponse: ${cause instanceof Error ? cause.message : String(cause)}`,
+        parsed,
+      );
+    }
   });
+  return { decisions, usage: envelope.usage };
 }
 
 /**
@@ -144,9 +168,8 @@ export function createSystemOneAdapter(
     model: string,
     options: InferenceOptions,
   ): { url: string; headers: Record<string, string>; body: string } => {
-    source.model = model;
-    let state: JsonRecord = { transcript: transcriptText(messages) };
-    let questions: Question[] = DEFAULT_QUESTIONS;
+    let state: State = { transcript: transcriptText(messages) };
+    let questions: QuestionList = DEFAULT_QUESTIONS;
     const rawOverrides = options.providerOptions?.["systemOne"];
     if (rawOverrides !== undefined) {
       const overrides = SystemOneProviderOptions(rawOverrides);
@@ -160,6 +183,7 @@ export function createSystemOneAdapter(
       if (overrides.questions !== undefined) questions = overrides.questions;
     }
     const requestModel = model || endpoint.model || "unknown";
+    source.model = requestModel;
     const headers: Record<string, string> = {
       "content-type": "application/json",
       accept: "application/json",
@@ -177,7 +201,10 @@ export function createSystemOneAdapter(
   };
 
   const parseJSONResponse = (responseBody: string): InferenceEvent[] => {
-    const decisions = parseDecisions(responseBody, SYSTEM_ONE_PROVIDER);
+    const { decisions, usage } = parseDecisions(
+      responseBody,
+      SYSTEM_ONE_PROVIDER,
+    );
     const events: InferenceEvent[] = [];
     let index = 0;
     for (const decision of decisions) {
@@ -192,7 +219,7 @@ export function createSystemOneAdapter(
     events.push({
       type: "inference.usage",
       seq: 0,
-      data: { usage: ZERO_USAGE, source: { ...source } },
+      data: { usage: toTokenUsage(usage), source: { ...source } },
     });
     return events;
   };
@@ -202,5 +229,22 @@ export function createSystemOneAdapter(
   const parseResponse = (sseData: string): InferenceEvent[] =>
     parseJSONResponse(sseData);
 
-  return { buildRequest, parseResponse, parseJSONResponse };
+  // Jev answers 429/529 with a `retry-after` header; surfacing it lets the
+  // host harness's retry policy honor the backend's own backoff hint.
+  const extractRetryAfterMs = (headers: Headers): number | undefined => {
+    const raw = headers.get("retry-after");
+    if (raw === null) return undefined;
+    const seconds = Number(raw);
+    if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+    const at = Date.parse(raw);
+    if (!Number.isNaN(at)) return Math.max(0, at - Date.now());
+    return undefined;
+  };
+
+  return {
+    buildRequest,
+    parseResponse,
+    parseJSONResponse,
+    extractRetryAfterMs,
+  };
 }

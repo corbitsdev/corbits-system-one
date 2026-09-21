@@ -1,12 +1,13 @@
 # @corbits/system-one
 
 A typed-decision evaluation client for System One (Jev-class) models: ask
-choice/score/noul questions over a JSON state record and get back typed
+choice/score/noul questions over a state payload and get back typed
 decisions — or a typed fallback when the backend is unreachable. Endpoint
 differences (official, gateway, custom) are config, not forked code. The wire
-follows the documented Jev contract: questions serialize to an id-keyed map
-with a required `instructions` string and per-kind `criteria`, and answers
-arrive in an `answers` map keyed by the same ids.
+follows the live Jev contract (docs.typesafe.ai/api): `state` is a string,
+object, or array; `instructions` and `criteria` accept structured objects;
+questions serialize to an id-keyed map and answers arrive in an `answers`
+map keyed by the same ids.
 
 ## Install
 
@@ -50,9 +51,13 @@ const result = await evaluate({
 
 if (result.fallback) {
   // A FallbackResult: result.reason is one of 'no-key' | 'timeout' |
-  // 'network' | 'http-error' | 'parse-error' | 'backend-unreachable'.
+  // 'network' | 'http-error' | 'parse-error' | 'backend-unreachable',
+  // with result.detail explaining parse-error and no-key failures.
 } else {
-  // An EvaluateResult: result.decisions, result.modelId, result.backend.
+  // An EvaluateResult: result.decisions is a per-kind discriminated
+  // union — `if (d.type === "choice") d.choice` is always present —
+  // plus result.modelId, result.backend, and result.usage when the
+  // backend reports token counts.
 }
 ```
 
@@ -61,8 +66,9 @@ if (result.fallback) {
 `EvaluateConfig.endpoint` selects the backend: `official` (the default when
 omitted — the documented Jev systemone route with model `jev-latest`),
 `gateway` (the Vercel AI Gateway proxy with model `typesafe-ai/jev`), or
-`custom` with an explicit `url` (model defaults to `typesafe-ai/jev`). An
-optional `model` pins the model id per evaluation:
+`custom` with a required `url` (model defaults to `typesafe-ai/jev`). `url`
+only exists on `custom` — the schema rejects it on other kinds rather than
+silently ignoring it. An optional `model` pins the model id per evaluation:
 
 ```ts
 await evaluate({
@@ -103,8 +109,9 @@ rather than hang the caller. Callers with a different budget override it
 per call via `EvaluateConfig.timeoutMs`. When the bound is hit — or the
 backend is unreachable, returns an HTTP error, or returns output that
 fails strict validation — `evaluate` resolves to a `FallbackResult`
-carrying the `reason`, `latencyMs`, the `backendAttempted`, and
-`httpStatus` when an HTTP exchange produced one. Only caller-side misuse
+carrying the `reason`, `latencyMs`, the `backendAttempted` (credentials in
+custom URLs are stripped), `httpStatus` when an HTTP exchange produced one,
+and `detail` describing validation violations. Only caller-side misuse
 (invalid input, a `custom` endpoint without a `url`) throws, as a typed
 `SystemOneError`.
 
@@ -112,13 +119,25 @@ carrying the `reason`, `latencyMs`, the `backendAttempted`, and
 
 Each evaluation that passes input validation and endpoint resolution emits
 `SystemOneTelemetryEvent`s — `evaluate.start`, `evaluate.success`,
-`evaluate.fallback` — carrying `backend`, `modelId`, `latencyMs`, and the
-fallback `reason` when one applies. Caller-side misuse that throws before
+`evaluate.fallback` — carrying `backend`, `modelId`, `latencyMs`, the
+fallback `reason`, and a `detail` when one applies. Caller-side misuse that throws before
 any event is recorded (invalid input, a `custom` endpoint without a `url`)
 emits none. There is no sink:
 events buffer to an in-memory ring (capped at
 `MAX_BUFFERED_TELEMETRY_EVENTS`, oldest dropped past the cap) that the host
 drains with `drainTelemetryEvents`. Events never carry key material.
+
+## Interchange adapter
+
+`createSystemOneAdapter()` returns an Interchange `ProviderAdapter`
+(`@intx/inference`) so Jev slots into intx workflows and agents: the
+conversation transcript becomes the evaluation `state`, each decision is
+emitted as an `inference.text.delta` carrying its JSON, and the response's
+token counts flow through as `inference.usage`. `extractRetryAfterMs`
+surfaces the backend's `retry-after` header so the host harness honors
+429/529 backoff. Auth stays host-side — requests carry the bearer sentinel.
+Per call, `providerOptions.systemOne` (`{ state?, questions? }`) overrides
+the transcript-derived defaults.
 
 ## API
 

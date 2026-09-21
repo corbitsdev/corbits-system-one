@@ -10,7 +10,6 @@
       "devDependencies": {
         "@eslint/js": "9.34.0",
         "@intx/inference": "0.3.0",
-        "@intx/inference-testing": "0.3.0",
         "@intx/types": "0.3.0",
         "@types/bun": "1.3.9",
         "eslint": "9.34.0",
@@ -59,10 +58,6 @@
     "@humanwhocodes/retry": ["@humanwhocodes/retry@0.4.3", "", {}, "sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ=="],
 
     "@intx/inference": ["@intx/inference@0.3.0", "", { "dependencies": { "@intx/log": "0.3.0", "@intx/types": "0.3.0", "arktype": "^2.1.29" } }, "sha512-2DxqWRp5cSziXgDXPomSy0HTLVesBCtZErsKXYFnliTwYM6U+GRKk5rzwWMMgMWMFbtUaiogPExcNQYBYmfjQA=="],
-
-    "@intx/inference-discovery": ["@intx/inference-discovery@0.3.0", "", { "dependencies": { "@intx/types": "0.3.0", "arktype": "^2.1.29" } }, "sha512-JdlwqTuF5z53Hfy36ANZVrbCjhFoqHgJiVNyV/LSNpTA/sPGFxutuPB1MRG5gTtDpLE0tJV775NiRXGqp+F3zA=="],
-
-    "@intx/inference-testing": ["@intx/inference-testing@0.3.0", "", { "dependencies": { "@intx/inference": "0.3.0", "@intx/inference-discovery": "0.3.0", "@intx/types": "0.3.0", "arktype": "^2.1.29" } }, "sha512-zhCHVYH2ULEm3E0U6WNXoC6qi/EqBwX+XoCkubiEY71PmhVo57J7Vnh/+rG3v0BHJtiAefafiqV7KaXrsCkhow=="],
 
     "@intx/log": ["@intx/log@0.3.0", "", { "dependencies": { "@logtape/hono": "^2.0.2", "@logtape/logtape": "^2.0.2" }, "peerDependencies": { "hono": "^4.0.0" }, "optionalPeers": ["hono"] }, "sha512-iooPSZjiEUO1A91X5STRhOAk+2RprliB4nbriV/dOOz86kuxZ60y5T8ISQ5Jaj1US870gntN6QwnefY38aWi2Q=="],
 

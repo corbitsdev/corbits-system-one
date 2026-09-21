@@ -3,3 +3,7 @@ node_modules/
 .DS_Store
 .env
 .env.*
+tmp/
+.devin/
+examples/
+skills-lock.json

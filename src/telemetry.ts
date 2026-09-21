@@ -23,6 +23,7 @@ export const SystemOneTelemetryEvent = type({
   "modelId?": "string",
   latencyMs: "number",
   "reason?": FallbackReason,
+  "detail?": "string",
   "+": "reject",
 });
 export type SystemOneTelemetryEvent = typeof SystemOneTelemetryEvent.infer;

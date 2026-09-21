@@ -10,22 +10,29 @@ Endpoint differences (official, gateway, custom) are config, not forked code.
 ## Layout
 
 `src/schemas.ts` owns every trust boundary — questions, input, decisions,
-results — as arktype schemas; the other modules are thin stubs until the
-evaluate-core step lands. `src/index.ts` is the sole public entry:
+results — as arktype schemas. `src/index.ts` is the sole public entry:
 
-- `src/schemas.ts` — everything data-shaped: `ChoiceQuestion`,
-  `ScoreQuestion`, `BooleanQuestion`, the `Question` union, `JsonRecord`,
-  `EndpointConfig`, `EvaluateConfig`, `EvaluateInput`, `Confidence`,
-  `Decision`, `EvaluateResult`, `FallbackReason`, `FallbackResult`.
-- `src/config.ts` — quirks-as-data: `SystemOneQuirks` plus the
-  `SYSTEM_ONE_DEFAULT_QUIRKS` / `GATEWAY_QUIRKS` placeholders.
-- `src/client.ts` — the fetch POST stub (`postEvaluate`).
-- `src/evaluate.ts` — the `evaluate()` signature stub.
-- `src/adapter.ts` — the `ProviderAdapter` wiring stub against
-  `@intx/inference` plus the `SYSTEM_ONE_PROVIDER` id.
+- `src/schemas.ts` — everything data-shaped: `State`, `Description`,
+  `ChoiceQuestion`, `ScoreQuestion`, `NoulQuestion`, `BooleanQuestion`,
+  the `Question` union, `QuestionList`, `JsonRecord`, `EndpointConfig`,
+  `EvaluateConfig`, `EvaluateInput`, `Confidence`, `ProbabilityMap`,
+  `WireQuestion`/`WireRequest`/`WireAnswer`/`WireResponseBody`, `Decision`,
+  `Usage`, `EvaluateResult`, `FallbackReason`, `FallbackResult`, plus the
+  `toWireQuestions`/`toDecision` mapping functions.
+- `src/config.ts` — quirks-as-data: `SystemOneQuirks`, the
+  `SYSTEM_ONE_DEFAULT_QUIRKS` / `GATEWAY_QUIRKS` endpoint presets, env-var
+  names, `DEFAULT_TIMEOUT_MS`, and `resolveEndpoint`.
+- `src/client.ts` — the fetch POST transport (`postEvaluate`): one JSON
+  round trip with abort-bounded timeout, Bearer auth, typed errors only.
+- `src/evaluate.ts` — `evaluate()`: input validation, credential
+  resolution, strict answer cross-validation, and the fallback mapping.
+- `src/adapter.ts` — `createSystemOneAdapter`: an Interchange
+  `ProviderAdapter` bridge (buildRequest/parseResponse/parseJSONResponse/
+  extractRetryAfterMs) plus the `SYSTEM_ONE_PROVIDER` id.
 - `src/errors.ts` — the typed error taxonomy (`SystemOneError`,
-  `SystemOneErrorCode`).
-- `src/telemetry.ts` — the telemetry event shape plus its sink stub.
+  `SystemOneErrorCode`, `TimeoutError`, `NetworkError`, `HttpError`).
+- `src/telemetry.ts` — the telemetry event shape and the bounded in-memory
+  ring (`recordTelemetryEvent`/`drainTelemetryEvents`).
 - `src/index.ts` — re-exports of the above only.
 - `*.test.ts` next to the source they cover.
 
@@ -47,6 +54,15 @@ evaluate-core step lands. `src/index.ts` is the sole public entry:
 - Tests only for load-bearing risk (schema accept/reject on hostile input,
   timeout/fallback transitions, wire-format encoding) — not for trivial
   mapping or "returns what I passed in".
+
+- The wire contract is the live Jev API — source of truth is
+  https://docs.typesafe.ai (see `api.md`, `primitives/*`). The
+  `typesafe-ai` skill is installed at `.devin/skills/typesafe-ai/`.
+  `state` is `string | object | array`; `instructions` and `criteria`
+  values are `string | object | array` (structured forms are legal);
+  answers require their kind's fields (`noul`, `choice`/`score` +
+  `probabilities` + `confidence`, `legend` for score); the envelope may
+  carry `usage.input_tokens`/`output_tokens`.
 
 ## Local development
 

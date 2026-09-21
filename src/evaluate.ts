@@ -22,6 +22,7 @@ import {
   toWireQuestions,
   WireRequest,
   WireResponseBody,
+  type Decision,
   type EvaluateResult,
   type FallbackReason,
   type FallbackResult,
@@ -86,25 +87,43 @@ function secretsIn(raw: unknown): string[] {
   return secrets;
 }
 
+// A URL with any userinfo credentials removed — `backendAttempted` goes into
+// `FallbackResult`, which callers log and forward, so a caller-supplied
+// `https://user:pass@host/...` must not echo its credentials back out.
+function sanitizeUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.username === "" && parsed.password === "") return url;
+    parsed.username = "";
+    parsed.password = "";
+    return parsed.toString();
+  } catch {
+    return url.replace(/\/\/[^/@]+@/, "//");
+  }
+}
+
 // Strict cross-validation of one backend answer against its submitted
-// question. Choice values must be criteria options with full probability
-// coverage; scores must land inside the level range with a complete legend;
-// noul carries no confidence key — its absence is valid, not a violation.
-// Probability sums are approximate (backend rounds to two decimals), never
-// exact. Returns the violation, if any.
+// question, per the live contract: a noul answer must carry its `noul`
+// probability (noul has no confidence); a choice answer must carry `choice`,
+// `probabilities`, and `confidence`; a score answer must carry `score`,
+// `legend`, `probabilities`, and `confidence`. Probability sums are
+// approximate (backend rounds to two decimals), never exact. Returns the
+// violation, if any.
 function checkAnswer(
   question: Question,
   id: string,
   answer: WireAnswer,
 ): string | undefined {
-  if (question.type === "boolean") {
-    if (answer.type !== "noul") {
-      return `answer "${id}" type "${answer.type}" does not map to boolean (noul) question`;
-    }
+  const expectedType = question.type === "boolean" ? "noul" : question.type;
+  if (answer.type !== expectedType) {
+    return `answer "${id}" type "${answer.type}" does not match question type "${question.type}"`;
+  }
+  if (answer.type === "noul") {
+    if (answer.noul === undefined) return `answer "${id}" is missing noul`;
     return undefined;
   }
-  if (answer.type !== question.type) {
-    return `answer "${id}" type "${answer.type}" does not match question type "${question.type}"`;
+  if (answer.confidence === undefined) {
+    return `answer "${id}" is missing confidence`;
   }
   if (question.type === "choice" && answer.type === "choice") {
     if (answer.choice === undefined) return `answer "${id}" is missing choice`;
@@ -143,6 +162,10 @@ function checkAnswer(
   return undefined;
 }
 
+// The probability map must cover exactly the contract keys — every option or
+// every level index — with an approximate sum of 1. Extra keys are a shape
+// violation, not tolerated extras: they would echo into the caller's
+// decision as if they were real outcomes.
 function checkProbabilities(
   id: string,
   requiredKeys: string[],
@@ -151,10 +174,12 @@ function checkProbabilities(
   if (probabilities === undefined) {
     return `answer "${id}" is missing probabilities`;
   }
-  for (const key of requiredKeys) {
-    if (!(key in probabilities)) {
-      return `answer "${id}" probabilities are missing key "${key}"`;
-    }
+  const actual = new Set(Object.keys(probabilities));
+  if (
+    actual.size !== requiredKeys.length ||
+    !requiredKeys.every((key) => actual.has(key))
+  ) {
+    return `answer "${id}" probabilities keys ${JSON.stringify([...actual])} do not match ${JSON.stringify(requiredKeys)}`;
   }
   const sum = Object.values(probabilities).reduce((total, n) => total + n, 0);
   if (Math.abs(sum - 1) > SUM_TOLERANCE) {
@@ -206,9 +231,9 @@ function envKey(name: string): string | undefined {
  * A `timeoutMs` that is not a finite number >= 0 falls back to
  * `DEFAULT_TIMEOUT_MS`. Transport failures map to matching fallback reasons
  * (`'timeout'`, `'network'`, `'http-error'`); backend output that fails
- * strict validation maps to `'parse-error'`. Only caller-side misuse
- * (invalid input, a `custom` endpoint without a `url`) throws, as a typed
- * `SystemOneError`.
+ * strict validation maps to `'parse-error'` with the violation in `detail`.
+ * Only caller-side misuse (invalid input, a `custom` endpoint without a
+ * `url`) throws, as a typed `SystemOneError`.
  */
 export async function evaluate(
   input: EvaluateInput,
@@ -226,6 +251,7 @@ export async function evaluate(
     );
   }
   const endpoint = resolveEndpoint(parsed.config?.endpoint);
+  const backendAttempted = sanitizeUrl(endpoint.url);
   const rawTimeoutMs: unknown = parsed.config?.timeoutMs;
   const timeoutMs =
     typeof rawTimeoutMs === "number" &&
@@ -235,31 +261,37 @@ export async function evaluate(
       : DEFAULT_TIMEOUT_MS;
   const rawApiKey = parsed.config?.apiKey;
   let apiKey: string | undefined;
+  let keySources: string;
   if (rawApiKey !== undefined && rawApiKey !== "") {
     apiKey = rawApiKey;
+    keySources = "config.apiKey";
   } else if (endpoint.backend === "system-one") {
     apiKey = envKey(TYPESAFE_API_KEY_ENV) ?? envKey(SYSTEM_ONE_API_KEY_ENV);
+    keySources = `${TYPESAFE_API_KEY_ENV} or ${SYSTEM_ONE_API_KEY_ENV}`;
   } else if (endpoint.backend === "gateway") {
     apiKey =
       envKey(GATEWAY_API_KEY_ENV) ??
       envKey(GATEWAY_OIDC_ENV) ??
       envKey(SYSTEM_ONE_API_KEY_ENV);
+    keySources = `${GATEWAY_API_KEY_ENV}, ${GATEWAY_OIDC_ENV}, or ${SYSTEM_ONE_API_KEY_ENV}`;
   } else {
     apiKey = envKey(SYSTEM_ONE_API_KEY_ENV);
+    keySources = SYSTEM_ONE_API_KEY_ENV;
   }
   const model = endpoint.model ?? "typesafe-ai/jev";
 
   const fallback = (
     reason: FallbackReason,
-    httpStatus?: number,
+    extra?: { httpStatus?: number; detail?: string },
   ): FallbackResult => {
     const result: FallbackResult = {
       fallback: true,
       reason,
       latencyMs: Date.now() - start,
-      backendAttempted: endpoint.url,
+      backendAttempted,
     };
-    if (httpStatus !== undefined) result.httpStatus = httpStatus;
+    if (extra?.httpStatus !== undefined) result.httpStatus = extra.httpStatus;
+    if (extra?.detail !== undefined) result.detail = extra.detail;
     const event: SystemOneTelemetryEvent = {
       event: "evaluate.fallback",
       backend: endpoint.backend,
@@ -267,6 +299,7 @@ export async function evaluate(
       reason,
       modelId: model,
     };
+    if (extra?.detail !== undefined) event.detail = extra.detail;
     recordTelemetryEvent(event);
     return result;
   };
@@ -280,7 +313,9 @@ export async function evaluate(
   recordTelemetryEvent(startEvent);
 
   if (apiKey === undefined || apiKey === "") {
-    return fallback("no-key");
+    return fallback("no-key", {
+      detail: `no API key supplied; set config.apiKey or ${keySources}`,
+    });
   }
 
   const wire = WireRequest({
@@ -306,7 +341,7 @@ export async function evaluate(
     transportLatencyMs = response.latencyMs;
   } catch (cause) {
     if (cause instanceof HttpError) {
-      return fallback("http-error", cause.httpStatus);
+      return fallback("http-error", { httpStatus: cause.httpStatus });
     }
     if (cause instanceof TimeoutError) return fallback("timeout");
     if (cause instanceof NetworkError) return fallback("network");
@@ -315,21 +350,31 @@ export async function evaluate(
 
   const envelope = WireResponseBody(data);
   if (envelope instanceof type.errors) {
-    return fallback("parse-error");
+    return fallback("parse-error", {
+      detail: `response failed schema validation: ${envelope.summary.slice(0, 240)}`,
+    });
   }
   const violation = checkAnswers(parsed.questions, envelope.answers);
   if (violation !== undefined) {
-    return fallback("parse-error");
+    return fallback("parse-error", { detail: violation });
   }
 
   const modelId = envelope.model ?? model;
-  const decisions = [];
+  const decisions: Decision[] = [];
   for (const question of parsed.questions) {
     const answer = envelope.answers[question.id];
     if (answer === undefined) {
-      return fallback("parse-error");
+      return fallback("parse-error", {
+        detail: `answer "${question.id}" vanished during parsing`,
+      });
     }
-    decisions.push(toDecision(question.id, answer));
+    try {
+      decisions.push(toDecision(question.id, answer));
+    } catch (cause) {
+      return fallback("parse-error", {
+        detail: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
   }
   const result: EvaluateResult = {
     decisions,
@@ -338,6 +383,12 @@ export async function evaluate(
     latencyMs: transportLatencyMs,
     fallback: false,
   };
+  if (envelope.usage !== undefined) {
+    result.usage = {
+      inputTokens: envelope.usage.input_tokens,
+      outputTokens: envelope.usage.output_tokens,
+    };
+  }
   const successEvent: SystemOneTelemetryEvent = {
     event: "evaluate.success",
     backend: endpoint.backend,
@@ -347,5 +398,3 @@ export async function evaluate(
   recordTelemetryEvent(successEvent);
   return result;
 }
-
-export { SUM_TOLERANCE as APPROXIMATE_SUM_TOLERANCE };

@@ -80,19 +80,18 @@ export type ResolvedEndpoint = {
  * `'gateway'` is reserved for the proxy quirks path.
  */
 export function resolveEndpoint(endpoint?: EndpointConfig): ResolvedEndpoint {
-  const kind = endpoint?.kind ?? "official";
-  if (kind === "custom") {
-    const url = endpoint?.url;
-    if (url === undefined || url === "") {
+  if (endpoint?.kind === "custom") {
+    if (endpoint.url === "") {
       throw new SystemOneError(
         "config-error",
         'evaluate: endpoint kind "custom" requires an explicit url',
       );
     }
-    const resolved: ResolvedEndpoint = { url, backend: "custom" };
-    if (endpoint?.model !== undefined) resolved.model = endpoint.model;
+    const resolved: ResolvedEndpoint = { url: endpoint.url, backend: "custom" };
+    if (endpoint.model !== undefined) resolved.model = endpoint.model;
     return resolved;
   }
+  const kind = endpoint?.kind ?? "official";
   const quirks =
     kind === "gateway" ? GATEWAY_QUIRKS : SYSTEM_ONE_DEFAULT_QUIRKS;
   const url = quirks.baseUrl;

@@ -137,7 +137,13 @@ describe("schemas", () => {
   });
 
   test("decision confidence is 0..1, never clamped", () => {
-    const base = { id: "risk", type: "score", score: 1.5 };
+    const base = {
+      id: "risk",
+      type: "score",
+      score: 1.5,
+      legend: { "0": "low", "1": "mid", "2": "high" },
+      probabilities: { "0": 0.2, "1": 0.5, "2": 0.3 },
+    };
     const lo = Decision({ ...base, confidence: 0 });
     expect(lo instanceof type.errors).toBe(false);
     const hi = Decision({ ...base, confidence: 1 });
@@ -146,10 +152,29 @@ describe("schemas", () => {
     expect(over instanceof type.errors).toBe(true);
   });
 
+  test("decisions are per-kind discriminated and complete", () => {
+    const noul = Decision({ id: "gate", type: "noul", noul: 0.9 });
+    expect(noul instanceof type.errors).toBe(false);
+    const emptyNoul = Decision({ id: "gate", type: "noul" });
+    expect(emptyNoul instanceof type.errors).toBe(true);
+    const thinChoice = Decision({
+      id: "route",
+      type: "choice",
+      choice: "allow",
+    });
+    expect(thinChoice instanceof type.errors).toBe(true);
+  });
+
   test("evaluate result parses, fallback flag is literal false", () => {
     const ok = EvaluateResult({
       decisions: [
-        { id: "route", type: "choice", choice: "allow", confidence: 0.9 },
+        {
+          id: "route",
+          type: "choice",
+          choice: "allow",
+          probabilities: { allow: 1 },
+          confidence: 0.9,
+        },
       ],
       modelId: "jev-1",
       backend: "system-one",
@@ -199,6 +224,9 @@ describe("schemas", () => {
       endpoint: { kind: "custom", url: "https://example.test/eval" },
     });
     expect(config instanceof type.errors).toBe(false);
+    // url only exists on custom: it would be silently ignored elsewhere
+    const ignored = EndpointConfig({ kind: "official", url: "https://x.test" });
+    expect(ignored instanceof type.errors).toBe(true);
   });
 
   test("telemetry event parses", () => {

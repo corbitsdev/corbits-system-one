@@ -283,10 +283,17 @@ describe("evaluate — happy path", () => {
       "risk",
       "escalate",
     ]);
-    expect(result.decisions[0]?.choice).toBe("step-up");
-    expect(result.decisions[1]?.score).toBe(1.4);
-    expect(result.decisions[2]?.noul).toBe(0.91);
-    expect(result.decisions[2]?.confidence).toBeUndefined();
+    const [routeDecision, riskDecision, escalateDecision] = result.decisions;
+    if (routeDecision?.type !== "choice")
+      throw new Error("expected a choice decision");
+    expect(routeDecision.choice).toBe("step-up");
+    if (riskDecision?.type !== "score")
+      throw new Error("expected a score decision");
+    expect(riskDecision.score).toBe(1.4);
+    if (escalateDecision?.type !== "noul")
+      throw new Error("expected a noul decision");
+    expect(escalateDecision.noul).toBe(0.91);
+    expect("confidence" in escalateDecision).toBe(false);
     expect(result.modelId).toBe("jev-1.13.0");
     expect(result.backend).toBe("system-one");
   });
@@ -309,7 +316,9 @@ describe("evaluate — happy path", () => {
     const gate = questions["gate"];
     if (!isRecord(gate)) throw new Error("gate is not a record");
     expect(gate["type"]).toBe("noul");
-    expect(result.decisions[0]?.noul).toBe(0.2);
+    const decision = result.decisions[0];
+    if (decision?.type !== "noul") throw new Error("expected a noul decision");
+    expect(decision.noul).toBe(0.2);
   });
 
   test("a caller-set custom URL is the one fetched (URL-provider proof)", async () => {
@@ -334,7 +343,11 @@ describe("evaluate — happy path", () => {
     try {
       await evaluate({
         ...mixedInput(),
-        config: { apiKey: "test-key", endpoint: { kind: "custom" } },
+        config: {
+          apiKey: "test-key",
+          // @ts-expect-error deliberately invalid: url is required on custom
+          endpoint: { kind: "custom" },
+        },
       });
     } catch (cause) {
       thrown = cause;
@@ -366,7 +379,10 @@ describe("evaluate — happy path", () => {
     expect(firstRequest().url).toBe(must(GATEWAY_QUIRKS.baseUrl));
     expect(bodyOf(firstRequest().bodyText)["model"]).toBe("typesafe-ai/jev");
     expect(result.backend).toBe("gateway");
-    expect(result.decisions[0]?.choice).toBe("allow");
+    const decision = result.decisions[0];
+    if (decision?.type !== "choice")
+      throw new Error("expected a choice decision");
+    expect(decision.choice).toBe("allow");
   });
 
   test("per-decision extras validate and are ignored, never echoed", async () => {
@@ -537,7 +553,49 @@ describe("evaluate — response validation", () => {
     expect("confidence" in escalate).toBe(false);
     behavior = withAnswers(answers);
     const result = asSuccess(await evaluate(keyedInput()));
-    expect(result.decisions[2]?.noul).toBe(0.91);
+    const decision = result.decisions[2];
+    if (decision?.type !== "noul") throw new Error("expected a noul decision");
+    expect(decision.noul).toBe(0.91);
+  });
+
+  test("a noul answer with no noul value fails closed", async () => {
+    behavior = () =>
+      jsonResponse({
+        model: "jev-1.13.0",
+        answers: { gate: { type: "noul" } },
+      });
+    const failed = asFallback(
+      await evaluate({
+        state: {},
+        questions: [{ id: "gate", type: "boolean", instructions: "Gate it?" }],
+        config: { apiKey: "test-key" },
+      }),
+      "parse-error",
+    );
+    expect(failed.detail).toContain("noul");
+  });
+
+  test("a choice answer missing confidence fails closed", async () => {
+    const answers = mixedAnswers();
+    const route = answers["route"];
+    if (!isRecord(route)) throw new Error("route is not a record");
+    delete route["confidence"];
+    behavior = withAnswers(answers);
+    asFallback(await evaluate(keyedInput()), "parse-error");
+  });
+
+  test("probability maps with extra keys fail closed", async () => {
+    const answers = mixedAnswers();
+    const route = answers["route"];
+    if (!isRecord(route)) throw new Error("route is not a record");
+    route["probabilities"] = {
+      allow: 0.5,
+      "step-up": 0.49,
+      deny: 0,
+      junk: 0.01,
+    };
+    behavior = withAnswers(answers);
+    asFallback(await evaluate(keyedInput()), "parse-error");
   });
 
   test("approximate probability sums pass, skewed sums fail", async () => {
@@ -563,6 +621,42 @@ describe("evaluate — response validation", () => {
     const { legend: _dropped, ...riskParts } = risk;
     behavior = withAnswers({ ...base, risk: riskParts });
     asFallback(await evaluate(keyedInput()), "parse-error");
+  });
+
+  test("string state and structured instructions/criteria pass through", async () => {
+    behavior = () =>
+      jsonResponse({
+        model: "jev-1.13.0",
+        answers: { q: { type: "noul", noul: 0.5 } },
+      });
+    const result = asSuccess(
+      await evaluate({
+        state: "Help! My payouts have been failing for 3 days.",
+        questions: [
+          {
+            id: "q",
+            type: "noul",
+            instructions: {
+              context: { note: "3-day outage" },
+              question: "Does this convey urgency about `context`?",
+            },
+            criteria: {
+              true: { means: "explicitly time-sensitive" },
+              false: "no urgency expressed",
+            },
+          },
+        ],
+        config: { apiKey: "test-key" },
+      }),
+    );
+    const body = bodyOf(firstRequest().bodyText);
+    expect(body["state"]).toBe(
+      "Help! My payouts have been failing for 3 days.",
+    );
+    const q = body["questions"];
+    if (!isRecord(q) || !isRecord(q["q"])) throw new Error("missing q");
+    expect(isRecord(q["q"]["instructions"])).toBe(true);
+    expect(result.decisions).toHaveLength(1);
   });
 
   test("a 422 naming the field maps to parse-error", async () => {
@@ -689,6 +783,41 @@ describe("evaluate — auth and transport", () => {
     asFallback(await evaluate(keyedInput()), "network");
   });
 
+  test("backendAttempted strips URL credentials", async () => {
+    behavior = () => {
+      throw new TypeError("fetch failed");
+    };
+    const failed = asFallback(
+      await evaluate({
+        ...mixedInput(),
+        config: {
+          apiKey: "test-key",
+          endpoint: {
+            kind: "custom",
+            url: "https://user:s3cret@proxy.test/evaluate",
+          },
+        },
+      }),
+      "network",
+    );
+    expect(failed.backendAttempted).toBe("https://proxy.test/evaluate");
+  });
+
+  test("no-key fallback details which sources were checked", async () => {
+    const failed = asFallback(await evaluate(mixedInput()), "no-key");
+    expect(failed.detail).toContain("TYPESAFE_API_KEY");
+  });
+
+  test("usage is surfaced on the result when the backend reports it", async () => {
+    behavior = () =>
+      jsonResponse({
+        ...liveBody(),
+        usage: { input_tokens: 296, output_tokens: 20 },
+      });
+    const result = asSuccess(await evaluate(keyedInput()));
+    expect(result.usage).toEqual({ inputTokens: 296, outputTokens: 20 });
+  });
+
   test("key material never appears in errors or telemetry", async () => {
     const secret = "super-secret-key";
     behavior = () => jsonResponse({ message: "nope", error_type: "auth" }, 401);
@@ -760,6 +889,55 @@ describe("adapter", () => {
     expect(thrown).toBeInstanceOf(ProtocolMismatchError);
   });
 
+  test("providerOptions.systemOne rejects duplicate question ids", () => {
+    const adapter = createSystemOneAdapter();
+    let thrown: unknown;
+    try {
+      adapter.buildRequest(turns(), "jev-latest", {
+        providerOptions: {
+          systemOne: {
+            questions: [
+              { id: "dup", type: "boolean", instructions: "Q1?" },
+              { id: "dup", type: "boolean", instructions: "Q2?" },
+            ],
+          },
+        },
+      });
+    } catch (cause) {
+      thrown = cause;
+    }
+    expect(thrown).toBeInstanceOf(ProtocolMismatchError);
+  });
+
+  test("extractRetryAfterMs parses seconds and HTTP dates", () => {
+    const adapter = createSystemOneAdapter();
+    const extract = adapter.extractRetryAfterMs;
+    if (extract === undefined) throw new Error("expected extractRetryAfterMs");
+    expect(extract(new Headers({ "retry-after": "2" }))).toBe(2000);
+    const at = new Date(Date.now() + 60_000).toUTCString();
+    const ms = extract(new Headers({ "retry-after": at }));
+    if (ms === undefined) throw new Error("expected a delay");
+    expect(ms).toBeGreaterThan(0);
+    expect(extract(new Headers())).toBeUndefined();
+    expect(extract(new Headers({ "retry-after": "garbage" }))).toBeUndefined();
+  });
+
+  test("usage event carries real token counts when reported", () => {
+    const adapter = createSystemOneAdapter();
+    const events = adapter.parseJSONResponse(
+      JSON.stringify({
+        model: "jev-1.13.0",
+        usage: { input_tokens: 296, output_tokens: 20 },
+        answers: { response: { type: "noul", noul: 0.4 } },
+      }),
+    );
+    const usage = events.find((e) => e.type === "inference.usage");
+    if (usage?.type !== "inference.usage")
+      throw new Error("expected a usage event");
+    expect(usage.data.usage.input).toBe(296);
+    expect(usage.data.usage.output).toBe(20);
+  });
+
   test("parseJSONResponse decodes answers map to text deltas + usage", () => {
     const adapter = createSystemOneAdapter();
     const events = adapter.parseJSONResponse(
@@ -816,6 +994,15 @@ describe("adapter", () => {
       malformed = cause;
     }
     expect(malformed).toBeInstanceOf(ProtocolMismatchError);
+    let missingValue: unknown;
+    try {
+      adapter.parseJSONResponse(
+        JSON.stringify({ answers: { x: { type: "noul" } } }),
+      );
+    } catch (cause) {
+      missingValue = cause;
+    }
+    expect(missingValue).toBeInstanceOf(ProtocolMismatchError);
   });
 });
 
@@ -912,12 +1099,12 @@ liveDescribe("live — permission-risk cases against a real endpoint", () => {
       ),
     );
     const decision = result.decisions[0];
-    if (decision?.type !== "choice" || decision.choice === undefined) {
+    if (decision?.type !== "choice") {
       throw new Error("expected a choice decision");
     }
     expect(["allow", "step-up", "deny"]).toContain(decision.choice);
     for (const option of ["allow", "step-up", "deny"]) {
-      const probability = decision.probabilities?.[option];
+      const probability = decision.probabilities[option];
       if (probability === undefined)
         throw new Error(`missing probability for ${option}`);
       expect(probability).toBeGreaterThanOrEqual(0);
@@ -938,12 +1125,12 @@ liveDescribe("live — permission-risk cases against a real endpoint", () => {
       ),
     );
     const decision = result.decisions[0];
-    if (decision?.type !== "score" || decision.score === undefined) {
+    if (decision?.type !== "score") {
       throw new Error("expected a score decision");
     }
     expect(decision.score).toBeGreaterThanOrEqual(0);
     expect(decision.score).toBeLessThanOrEqual(3);
-    expect(Object.keys(decision.legend ?? {})).toHaveLength(4);
+    expect(Object.keys(decision.legend)).toHaveLength(4);
   });
 
   test("T3/T4 — noul gates escalate destructive actions, pass routine reads", async () => {
@@ -961,7 +1148,7 @@ liveDescribe("live — permission-risk cases against a real endpoint", () => {
       ),
     );
     const yesDecision = yes.decisions[0];
-    if (yesDecision?.type !== "noul" || yesDecision.noul === undefined) {
+    if (yesDecision?.type !== "noul") {
       throw new Error("expected a noul decision");
     }
     expect(yesDecision.noul).toBeGreaterThanOrEqual(0.8);
@@ -980,7 +1167,7 @@ liveDescribe("live — permission-risk cases against a real endpoint", () => {
       ),
     );
     const noDecision = no.decisions[0];
-    if (noDecision?.type !== "noul" || noDecision.noul === undefined) {
+    if (noDecision?.type !== "noul") {
       throw new Error("expected a noul decision");
     }
     expect(noDecision.noul).toBeLessThanOrEqual(0.2);
