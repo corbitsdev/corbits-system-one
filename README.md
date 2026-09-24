@@ -270,7 +270,9 @@ bun install
 bun run check   # typecheck + lint + format:check + test
 ```
 
-TypeScript source on npm — no `dist/`. Bun runs `src/index.ts` as-is.
+Compiled `dist/` is built with `tsc -p tsconfig.build.json` (no
+bundler) and ships on npm; `prepack` rebuilds so every pack/publish
+carries fresh output.
 
 ## License
 

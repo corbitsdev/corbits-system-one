@@ -3,11 +3,15 @@
   "compilerOptions": {
     "noEmit": false,
     "declaration": true,
-    "declarationMap": true,
+    "declarationMap": false,
+    "sourceMap": false,
     "outDir": "dist",
     "rootDir": "src",
-    "moduleResolution": "bundler",
-    "customConditions": []
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowImportingTsExtensions": false,
+    "composite": false
   },
+  "include": ["src"],
   "exclude": ["src/**/*.test.ts"]
 }
