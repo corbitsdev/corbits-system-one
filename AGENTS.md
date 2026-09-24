@@ -81,6 +81,5 @@ with types from `dist/index.d.ts`. `files` is dist-only (`dist`, `README.md`,
 tsconfig.build.json`, no bundler) emits `dist/`; `prepack` runs the build so
 every pack/publish carries fresh output. Relative imports in `src/` carry
 `.js` suffixes so the emitted ESM resolves under Node. It requires Bun
-
-> =1.2.0 per the `engines` field. To publish, bump the version and run `npm
+>=1.2.0 per the `engines` field. To publish, bump the version and run `npm
 publish --access public`.
