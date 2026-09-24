@@ -1,4 +1,6 @@
 node_modules/
+dist/
+*.tsbuildinfo
 .corbits/
 .DS_Store
 .env

@@ -1,4 +1,4 @@
-import type { FallbackReason } from "./schemas";
+import type { FallbackReason } from "./schemas.js";
 
 // ---------------------------------------------------------------------------
 // Errors

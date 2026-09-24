@@ -1,6 +1,6 @@
 import { type } from "arktype";
 
-import { postEvaluate } from "./client";
+import { postEvaluate } from "./client.js";
 import {
   DEFAULT_TIMEOUT_MS,
   GATEWAY_API_KEY_ENV,
@@ -8,13 +8,13 @@ import {
   resolveEndpoint,
   SYSTEM_ONE_API_KEY_ENV,
   TYPESAFE_API_KEY_ENV,
-} from "./config";
+} from "./config.js";
 import {
   HttpError,
   NetworkError,
   SystemOneError,
   TimeoutError,
-} from "./errors";
+} from "./errors.js";
 import {
   APPROXIMATE_SUM_TOLERANCE as SUM_TOLERANCE,
   EvaluateInput,
@@ -28,11 +28,11 @@ import {
   type FallbackResult,
   type Question,
   type WireAnswer,
-} from "./schemas";
+} from "./schemas.js";
 import {
   recordTelemetryEvent,
   type SystemOneTelemetryEvent,
-} from "./telemetry";
+} from "./telemetry.js";
 
 // ---------------------------------------------------------------------------
 // evaluate

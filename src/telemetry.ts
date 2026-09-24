@@ -1,7 +1,7 @@
 import { type } from "arktype";
 
-import { SystemOneError } from "./errors";
-import { FallbackReason } from "./schemas";
+import { SystemOneError } from "./errors.js";
+import { FallbackReason } from "./schemas.js";
 
 // ---------------------------------------------------------------------------
 // Telemetry

@@ -1,6 +1,6 @@
 import { type } from "arktype";
 
-import { SystemOneError } from "./errors";
+import { SystemOneError } from "./errors.js";
 
 // ---------------------------------------------------------------------------
 // Shared JSON shapes

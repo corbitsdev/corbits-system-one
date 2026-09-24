@@ -7,24 +7,24 @@ export {
   SYSTEM_ONE_DEFAULT_QUIRKS,
   SystemOneQuirks,
   TYPESAFE_API_KEY_ENV,
-} from "./config";
-export { postEvaluate } from "./client";
-export type { PostEvaluateOptions, PostEvaluateResponse } from "./client";
-export { evaluate } from "./evaluate";
-export { createSystemOneAdapter, SYSTEM_ONE_PROVIDER } from "./adapter";
+} from "./config.js";
+export { postEvaluate } from "./client.js";
+export type { PostEvaluateOptions, PostEvaluateResponse } from "./client.js";
+export { evaluate } from "./evaluate.js";
+export { createSystemOneAdapter, SYSTEM_ONE_PROVIDER } from "./adapter.js";
 export {
   HttpError,
   NetworkError,
   SystemOneError,
   TimeoutError,
-} from "./errors";
-export type { SystemOneErrorCode } from "./errors";
+} from "./errors.js";
+export type { SystemOneErrorCode } from "./errors.js";
 export {
   drainTelemetryEvents,
   MAX_BUFFERED_TELEMETRY_EVENTS,
   recordTelemetryEvent,
   SystemOneTelemetryEvent,
-} from "./telemetry";
+} from "./telemetry.js";
 export {
   APPROXIMATE_SUM_TOLERANCE,
   BooleanQuestion,
@@ -54,4 +54,4 @@ export {
   WireRequest,
   WireResponseBody,
   WireUsage,
-} from "./schemas";
+} from "./schemas.js";
