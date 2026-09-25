@@ -114,7 +114,9 @@ export async function postEvaluate(
       data = await res.json();
     } catch {
       throw transportError(
-        classifyProtocolMismatch("system-one response body is not valid JSON"),
+        classifyProtocolMismatch(
+          "system-one response body could not be read as JSON",
+        ),
       );
     }
     return { data, latencyMs: Date.now() - start, httpStatus: res.status };
