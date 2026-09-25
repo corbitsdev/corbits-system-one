@@ -4,6 +4,7 @@ import {
   classifyProtocolMismatch,
   type Dependencies,
 } from "@intx/inference";
+import type { InferenceError } from "@intx/types/runtime";
 
 import { DEFAULT_TIMEOUT_MS } from "./config.js";
 import { SystemOneError, TransportError } from "./errors.js";
@@ -72,6 +73,11 @@ export async function postEvaluate(
     controller.abort();
   }, timeoutMs);
   const start = deps.scheduler.now();
+  // The timeout can fire while awaiting headers or while reading the body.
+  const timedOut: InferenceError = {
+    category: "timeout",
+    message: `system-one request timed out after ${timeoutMs}ms`,
+  };
   try {
     const headers: Record<string, string> = {
       "content-type": "application/json",
@@ -89,13 +95,9 @@ export async function postEvaluate(
         signal: controller.signal,
       });
     } catch (cause) {
-      if (controller.signal.aborted) {
-        throw new TransportError({
-          category: "timeout",
-          message: `system-one request timed out after ${timeoutMs}ms`,
-        });
-      }
-      throw new TransportError(classifyNetworkError(cause));
+      throw new TransportError(
+        controller.signal.aborted ? timedOut : classifyNetworkError(cause),
+      );
     }
     if (!res.ok) {
       throw new TransportError(
@@ -110,9 +112,11 @@ export async function postEvaluate(
       data = await res.json();
     } catch {
       throw new TransportError(
-        classifyProtocolMismatch(
-          "system-one response body could not be read as JSON",
-        ),
+        controller.signal.aborted
+          ? timedOut
+          : classifyProtocolMismatch(
+              "system-one response body could not be read as JSON",
+            ),
       );
     }
     return {
