@@ -297,7 +297,7 @@ export async function evaluate(
     apiKey = envKey(SYSTEM_ONE_API_KEY_ENV);
     keySources = SYSTEM_ONE_API_KEY_ENV;
   }
-  const model = endpoint.model ?? "typesafe-ai/jev";
+  const model = endpoint.model;
 
   const fallback = (
     reason: FallbackReason,

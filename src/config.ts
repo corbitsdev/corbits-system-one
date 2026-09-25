@@ -26,17 +26,17 @@ export type SystemOneQuirks = typeof SystemOneQuirks.infer;
 // The official System One endpoint: the documented Jev systemone route with
 // the stable model alias. Callers needing the proxied route use `gateway`;
 // callers with their own deployment use `custom` with an explicit `url`.
-export const SYSTEM_ONE_DEFAULT_QUIRKS: SystemOneQuirks = {
+export const SYSTEM_ONE_DEFAULT_QUIRKS = {
   baseUrl: "https://api.typesafe.ai/v1/systemone",
   model: "jev-latest",
-};
+} satisfies SystemOneQuirks;
 
 // The Vercel AI Gateway proxy for the Jev model, TypeSafe-compatible REST
 // shape. Callers select it per call with `endpoint: { kind: "gateway" }`.
-export const GATEWAY_QUIRKS: SystemOneQuirks = {
+export const GATEWAY_QUIRKS = {
   baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1/systemone",
   model: "typesafe-ai/jev",
-};
+} satisfies SystemOneQuirks;
 
 // Credential sources, one per endpoint: a TypeSafe key never authenticates
 // to the gateway and a gateway key never authenticates to TypeSafe direct,
@@ -68,7 +68,7 @@ export const DEFAULT_TIMEOUT_MS = 1500;
 export type ResolvedEndpoint = {
   url: string;
   backend: "corbits-system-one" | "gateway" | "custom";
-  model?: string;
+  model: string;
 };
 
 /**
@@ -77,7 +77,8 @@ export type ResolvedEndpoint = {
  * carry its own `url` and throws a typed `SystemOneError` when it does
  * not. A `custom` target keeps the `'custom'` backend label so telemetry
  * distinguishes caller-routed traffic from the official endpoint —
- * `'gateway'` is reserved for the proxy quirks path.
+ * `'gateway'` is reserved for the proxy quirks path. The model always
+ * resolves here: a `custom` target without one sends `typesafe-ai/jev`.
  */
 export function resolveEndpoint(endpoint?: EndpointConfig): ResolvedEndpoint {
   if (endpoint?.kind === "custom") {
@@ -87,9 +88,11 @@ export function resolveEndpoint(endpoint?: EndpointConfig): ResolvedEndpoint {
         'evaluate: endpoint kind "custom" requires an explicit url',
       );
     }
-    const resolved: ResolvedEndpoint = { url: endpoint.url, backend: "custom" };
-    if (endpoint.model !== undefined) resolved.model = endpoint.model;
-    return resolved;
+    return {
+      url: endpoint.url,
+      backend: "custom",
+      model: endpoint.model ?? GATEWAY_QUIRKS.model,
+    };
   }
   const kind = endpoint?.kind ?? "official";
   const quirks =
@@ -101,11 +104,9 @@ export function resolveEndpoint(endpoint?: EndpointConfig): ResolvedEndpoint {
       `evaluate: no baseUrl configured for endpoint kind "${kind}"`,
     );
   }
-  const resolved: ResolvedEndpoint = {
+  return {
     url,
     backend: kind === "gateway" ? "gateway" : "corbits-system-one",
+    model: endpoint?.model ?? quirks.model,
   };
-  const model = endpoint?.model ?? quirks.model;
-  if (model !== undefined) resolved.model = model;
-  return resolved;
 }
