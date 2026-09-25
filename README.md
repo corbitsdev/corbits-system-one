@@ -1,43 +1,11 @@
 # @corbits/system-one
 
 [![License: LGPL-2.1](https://img.shields.io/badge/license-LGPL--2.1-green.svg)](./LICENSE)
-[![Runtime: Bun](https://img.shields.io/badge/runtime-Bun%201.2%2B-black.svg)](#development)
+[![Runtime: Bun](https://img.shields.io/badge/runtime-Bun%201.2%2B-black.svg)](#quickstart)
 
-**Typed decisions from System One (Jev-class) models — as an Interchange
-inference provider, or as a direct `evaluate()` call.**
-
-Ask choice, score, and boolean questions over a state payload. You get
-back per-kind decisions, or a typed fallback when the backend is
-unreachable. Official, gateway, and custom endpoints are config, not
-forked code.
-
-## Contents
-
-- [Why](#why)
-- [Quickstart](#quickstart)
-- [How it works](#how-it-works)
-- [Development](#development)
-- [License](#license)
-
-## Why
-
-Interchange agents and workflows already speak providers. This package
-is the System One adapter for that surface:
-
-- **One provider id.** `SYSTEM_ONE_PROVIDER` is `"corbits-system-one"`
-  — same naming as the other Corbits libraries, not a generic
-  `"system-one"`. Use it in `defineAgent` / workflow inference sources
-  the way you would `"anthropic"`.
-- **Questions on the call.** Pass Jev questions (and optional state)
-  through `providerOptions.systemOne`. The transcript is the default
-  state when you omit it.
-- **Two output shapes.** Direct `evaluate()` returns an
-  `EvaluateResult` or `FallbackResult`. The adapter unwraps the same
-  decisions into Interchange `inference.text.delta` / `inference.usage`
-  events so an agent step can consume them.
-- **Host-owned credentials.** The adapter sends Interchange's bearer
-  sentinel; the harness injects the real key. Peers are
-  `@intx/inference` and `@intx/types` — one copy, the host's.
+Ask choice, score and yes/no questions about a JSON state and get typed
+answers from TypeSafe's Jev model, either with a direct `evaluate()` call
+or as a provider inside an Interchange agent or workflow.
 
 ## Quickstart
 
@@ -51,6 +19,8 @@ bun add @corbits/system-one
 Shared questions used below:
 
 ```ts
+import type { QuestionList } from "@corbits/system-one";
+
 const questions = [
   {
     id: "route",
@@ -63,7 +33,7 @@ const questions = [
     type: "boolean",
     instructions: "Must this request be escalated for human approval?",
   },
-];
+] satisfies QuestionList;
 ```
 
 ### Direct `evaluate()` — typed result object
@@ -75,11 +45,14 @@ questions answer as native `noul` (0..1).
 ```ts
 import { evaluate } from "@corbits/system-one";
 
+// Reads TYPESAFE_API_KEY from the environment; or pass config.apiKey.
 const result = await evaluate({
   state: { action: "deploy", env: "production" },
   questions,
-  config: { apiKey: process.env.TYPESAFE_API_KEY },
 });
+
+if (result.fallback) console.error(result.reason, result.detail);
+else console.log(result.decisions);
 ```
 
 Success looks like:
@@ -116,7 +89,7 @@ No key / timeout / HTTP / parse failure looks like:
   reason: "no-key", // or "timeout" | "network" | "http-error" | "parse-error" | "backend-unreachable"
   latencyMs: 2,
   backendAttempted: "https://api.typesafe.ai/...",
-  detail: "no API key in config.apiKey, TYPESAFE_API_KEY, or SYSTEM_ONE_API_KEY",
+  detail: "no API key supplied; set config.apiKey or TYPESAFE_API_KEY or SYSTEM_ONE_API_KEY",
 }
 ```
 
@@ -167,38 +140,12 @@ const { reply } = await agent.send("Deploy to production?", {
 });
 ```
 
-What the adapter emits (what `reply` is assembled from):
+The adapter emits one `inference.text.delta` per decision, then usage:
 
 ```ts
-[
-  {
-    type: "inference.text.delta",
-    data: {
-      index: 0,
-      token:
-        '{"id":"route","type":"choice","choice":"deny","confidence":0.86,"probabilities":{"allow":0.14,"deny":0.86}}',
-    },
-  },
-  {
-    type: "inference.text.delta",
-    data: {
-      index: 1,
-      token: '{"id":"escalate","type":"noul","noul":0.91}',
-    },
-  },
-  {
-    type: "inference.usage",
-    data: {
-      usage: {
-        input: 296,
-        output: 20,
-        cacheRead: 0,
-        cacheWrite: 0,
-        thinking: 0,
-      },
-    },
-  },
-];
+{ type: "inference.text.delta", data: { index: 0, token: '{"id":"route","type":"choice","choice":"deny",...}' } }
+{ type: "inference.text.delta", data: { index: 1, token: '{"id":"escalate","type":"noul","noul":0.91}' } }
+{ type: "inference.usage", data: { usage: { input: 296, output: 20, cacheRead: 0, cacheWrite: 0, thinking: 0 } } }
 ```
 
 `JSON.parse` each `token` and you have the same decision objects as
@@ -250,30 +197,9 @@ The step's inference output is the same event list: one text delta
 whose token is `{"id":"approve","type":"noul","noul":0.2}`, then
 usage.
 
-## How it works
+## Contributing
 
-- **Wire.** Live Jev contract ([docs.typesafe.ai](https://docs.typesafe.ai)):
-  `state` is string | object | array; questions go out as an id-keyed
-  map; answers come back the same way.
-- **Adapter.** Transcript → evaluation state; each decision →
-  `inference.text.delta`; token counts → `inference.usage`.
-- **Schemas.** Every trust boundary is arktype (`src/schemas.ts`).
-  Confidence is narrowed, not clamped. Public surface is
-  `src/index.ts` only.
-- **Telemetry.** `evaluate(input, { onTelemetry })` passes
-  `evaluate.start` / `.success` / `.fallback` events to the sink. No keys
-  in events.
-
-## Development
-
-```
-bun install
-bun run check   # typecheck + lint + format:check + test
-```
-
-Compiled `dist/` is built with `tsc -p tsconfig.build.json` (no
-bundler) and ships on npm; `prepack` rebuilds so every pack/publish
-carries fresh output.
+See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## License
 
