@@ -29,6 +29,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "bun test",
+    "test:unit": "bun test src",
+    "test:e2e": "bun test e2e",
     "prepack": "bun run build",
     "check": "bun run typecheck && bun run lint && bun run format:check && bun run test"
   },
