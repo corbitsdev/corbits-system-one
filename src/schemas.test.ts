@@ -66,6 +66,21 @@ describe("schemas", () => {
     expect(parsed instanceof type.errors).toBe(true);
   });
 
+  test("input accepts string state and structured instructions and criteria", () => {
+    const parsed = EvaluateInput({
+      state: "Payouts have failed for 3 days.",
+      questions: [
+        {
+          id: "q",
+          type: "noul",
+          instructions: { question: "Is this urgent?" },
+          criteria: { true: { means: "time-sensitive" }, false: "not urgent" },
+        },
+      ],
+    });
+    expect(parsed instanceof type.errors).toBe(false);
+  });
+
   test("input rejects duplicate ids, empty instructions and one-level scores", () => {
     const invalid = [
       [
