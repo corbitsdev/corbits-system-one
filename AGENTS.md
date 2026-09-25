@@ -30,7 +30,8 @@ results — as arktype schemas. `src/index.ts` is the sole public entry:
   `ProviderAdapter` bridge (buildRequest/parseResponse/parseJSONResponse/
   extractRetryAfterMs) plus the `SYSTEM_ONE_PROVIDER` id (`corbits-system-one`).
 - `src/errors.ts` — the typed error taxonomy (`SystemOneError`,
-  `SystemOneErrorCode`, `TimeoutError`, `NetworkError`, `HttpError`).
+  `SystemOneErrorCode`); transport failures carry an `InferenceError`
+  `reason` from the `@intx/inference` classifiers.
 - `src/telemetry.ts` — the telemetry event shape and the bounded in-memory
   ring (`recordTelemetryEvent`/`drainTelemetryEvents`).
 - `src/index.ts` — re-exports of the above only.

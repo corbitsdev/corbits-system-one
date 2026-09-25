@@ -9,12 +9,7 @@ import {
   SYSTEM_ONE_API_KEY_ENV,
   TYPESAFE_API_KEY_ENV,
 } from "./config.js";
-import {
-  HttpError,
-  NetworkError,
-  SystemOneError,
-  TimeoutError,
-} from "./errors.js";
+import { SystemOneError, transportFallbackReason } from "./errors.js";
 import {
   APPROXIMATE_SUM_TOLERANCE as SUM_TOLERANCE,
   EvaluateInput,
@@ -340,12 +335,12 @@ export async function evaluate(
     data = response.data;
     transportLatencyMs = response.latencyMs;
   } catch (cause) {
-    if (cause instanceof HttpError) {
-      return fallback("http-error", { httpStatus: cause.httpStatus });
+    if (!(cause instanceof SystemOneError) || cause.reason === undefined) {
+      throw cause;
     }
-    if (cause instanceof TimeoutError) return fallback("timeout");
-    if (cause instanceof NetworkError) return fallback("network");
-    throw cause;
+    const reason = transportFallbackReason(cause.reason);
+    if (cause.reason.statusCode === undefined) return fallback(reason);
+    return fallback(reason, { httpStatus: cause.reason.statusCode });
   }
 
   const envelope = WireResponseBody(data);
