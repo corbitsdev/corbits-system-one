@@ -1,7 +1,7 @@
 # @corbits/system-one
 
 [![License: LGPL-2.1](https://img.shields.io/badge/license-LGPL--2.1-green.svg)](./LICENSE)
-[![Runtime: Bun](https://img.shields.io/badge/runtime-Bun%201.2%2B-black.svg)](#quickstart)
+[![Runtime: Bun 1.2+ | Node 24+](https://img.shields.io/badge/runtime-Bun%201.2%2B%20%7C%20Node%2024%2B-black.svg)](#quickstart)
 
 Ask choice, score and yes/no questions about a JSON state and get typed
 answers from TypeSafe's Jev model, either with a direct `evaluate()` call
