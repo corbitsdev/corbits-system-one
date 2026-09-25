@@ -16,7 +16,8 @@ Interchange copies.
 bun add @corbits/system-one
 ```
 
-Shared questions used below:
+Shared questions used below (the questions and `evaluate()` snippets are
+typechecked as [`examples/quickstart.ts`](./examples/quickstart.ts)):
 
 ```ts
 import type { QuestionList } from "@corbits/system-one";
