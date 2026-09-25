@@ -1,207 +1,186 @@
 # @corbits/system-one
 
-[![License: LGPL-2.1](https://img.shields.io/badge/license-LGPL--2.1-green.svg)](./LICENSE)
-[![Runtime: Bun 1.2+ | Node 24+](https://img.shields.io/badge/runtime-Bun%201.2%2B%20%7C%20Node%2024%2B-black.svg)](#quickstart)
+[![License: LGPL-2.1](https://img.shields.io/badge/license-LGPL--2.1-green.svg)](https://github.com/corbitsdev/corbits-system-one/blob/main/LICENSE)
 
-Ask choice, score and yes/no questions about a JSON state and get typed
-answers from TypeSafe's Jev model, either with a direct `evaluate()` call
-or as a provider inside an Interchange agent or workflow.
+Typed choice, score and yes/no decisions about a JSON state from TypeSafe's Jev model, returned as a validated result or a typed fallback. An inference provider for Corbits and Interchange agents: registers as an `@intx/inference` adapter, and also works standalone through `evaluate()`.
+
+## Why @corbits/system-one?
+
+1. **Typed decisions, not free text.** You send questions with ids; you get back one validated decision per id, with probabilities and confidence. No prompt parsing.
+2. **Failures are data.** A missing key, timeout, HTTP error or bad body returns a `FallbackResult` with a `reason`, so a gate can fail closed without a `try`. Only invalid caller input throws.
+3. **One call, many questions.** Every question in a list goes out in one POST, bounded by a 1.5 s default timeout.
+
+It evaluates structured state against questions. For open-ended chat completions, use a general inference provider such as [`@corbits/openai-responses`](https://github.com/corbitsdev/corbits-openai-responses).
+
+## Install
+
+```bash
+bun add @corbits/system-one @intx/inference@^0.4.0 @intx/types@^0.4.0
+```
+
+Runs on Bun >= 1.2 or Node >= 24.
 
 ## Quickstart
 
-Requires [Bun](https://bun.sh/) 1.2+. Peers resolve to the host's
-Interchange copies.
-
-```
-bun add @corbits/system-one
-```
-
-Shared questions used below (the questions and `evaluate()` snippets are
-typechecked as [`examples/quickstart.ts`](./examples/quickstart.ts)):
+Needs `TYPESAFE_API_KEY` set.
 
 ```ts
-import type { QuestionList } from "@corbits/system-one";
+import { evaluate } from "@corbits/system-one";
+
+const result = await evaluate({
+  state: { action: "deploy", env: "production" },
+  questions: [
+    {
+      id: "escalate",
+      type: "boolean",
+      instructions: "Must this request be escalated for human approval?",
+    },
+  ],
+});
+
+console.log(result.fallback ? result.reason : result.decisions);
+```
+
+On success it prints one decision per question, or the fallback reason on failure:
+
+```ts
+[{ id: "escalate", type: "noul", noul: 0.91 }];
+```
+
+Boolean questions answer as `noul`, a probability from 0 to 1 that the answer is yes.
+
+## Where it fits
+
+[Interchange](https://github.com/faremeter/interchange) runs AI agents as principals (accounts that hold their own identity, permissions and credentials). Corbits packages add what an agent product needs around it.
+
+- **Runs in:** the agent sidecar (the runtime next to each agent), or any process. `evaluate()` needs no Interchange runtime.
+- **Plugs into:** the [`@intx/inference`](https://github.com/faremeter/interchange/tree/main/packages/inference) adapter registry, as the adapter for the `corbits-system-one` provider id.
+- **Pairs with:** [`@corbits/openai-responses`](https://github.com/corbitsdev/corbits-openai-responses) and [`@corbits/ollama-adapter`](https://github.com/corbitsdev/corbits-ollama-adapter), the other Corbits inference providers.
+
+## Reference
+
+| Export                            | Description                                                                      |
+| --------------------------------- | -------------------------------------------------------------------------------- |
+| `evaluate(input, options?)`       | Runs one evaluation. Returns `EvaluateResult`: decisions or a `FallbackResult`.  |
+| `createSystemOneAdapter(config?)` | Returns a `ProviderAdapter` for `runInference`. `config` is an `EvaluateConfig`. |
+| `SYSTEM_ONE_PROVIDER`             | The `"corbits-system-one"` provider id.                                          |
+| `DEFAULT_TIMEOUT_MS`              | `1500`, the default `timeoutMs`.                                                 |
+| `SystemOneError`                  | Thrown for invalid input or a `custom` endpoint without a `url`.                 |
+| `SystemOneTelemetryEvent`         | Schema and type for events passed to `onTelemetry`.                              |
+| `EvaluateOptions`, `EvaluateDeps` | Types for `options`: `onTelemetry`, and `deps: { fetch, scheduler }`.            |
+
+`Question`, `QuestionList`, `Decision`, `EvaluateInput`, `EvaluateConfig`, `EndpointConfig`, `EvaluateResult` and `FallbackResult` are exported as arktype schemas and types.
+
+### Questions
+
+| `type`    | Fields                                                                          | Decision fields                                  |
+| --------- | ------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `choice`  | `instructions`, `criteria` (option name → description or `null`, 1–255 options) | `choice`, `probabilities`, `confidence`          |
+| `score`   | `instructions`, `criteria` (2–10 descriptions)                                  | `score`, `legend`, `probabilities`, `confidence` |
+| `boolean` | `instructions`, optional `criteria: { true?, false? }`                          | `noul`                                           |
+| `noul`    | Same as `boolean`                                                               | `noul`                                           |
+
+Every question has an `id`, unique within the list.
+
+### Config
+
+`input.config` for `evaluate`, or the argument to `createSystemOneAdapter`:
+
+| Field       | Type             | Default                | Description                                                                      |
+| ----------- | ---------------- | ---------------------- | -------------------------------------------------------------------------------- |
+| `endpoint`  | `EndpointConfig` | `{ kind: "official" }` | `official`, `gateway`, or `custom` with a `url`. Each takes an optional `model`. |
+| `timeoutMs` | `number`         | `1500`                 | Bound for the whole round trip.                                                  |
+| `apiKey`    | `string`         | from the environment   | Overrides the environment key.                                                   |
+
+### Endpoints and keys
+
+| `kind`     | URL                                                  | Default model     | Key from the environment                       |
+| ---------- | ---------------------------------------------------- | ----------------- | ---------------------------------------------- |
+| `official` | `https://api.typesafe.ai/v1/systemone`               | `jev-latest`      | `TYPESAFE_API_KEY`                             |
+| `gateway`  | `https://ai-gateway.vercel.sh/typesafe/v1/systemone` | `typesafe-ai/jev` | `AI_GATEWAY_API_KEY`, then `VERCEL_OIDC_TOKEN` |
+| `custom`   | `url`                                                | `typesafe-ai/jev` | `SYSTEM_ONE_API_KEY`                           |
+
+`SYSTEM_ONE_API_KEY` is also a supported alias on every endpoint, read after the endpoint's own key.
+
+### Fallback reasons
+
+| `reason`      | When                                                          |
+| ------------- | ------------------------------------------------------------- |
+| `no-key`      | No key in `apiKey` or the environment. No request is sent.    |
+| `timeout`     | The round trip, including the body read, exceeds `timeoutMs`. |
+| `network`     | The request fails before a response.                          |
+| `http-error`  | Non-2xx response. `httpStatus` holds the status.              |
+| `parse-error` | The body is not JSON or fails validation.                     |
+
+`detail` carries the underlying message.
+
+## Using with Interchange
+
+Register the adapter under `SYSTEM_ONE_PROVIDER` and pass questions per call in `providerOptions.systemOne` (`{ state?, questions? }`). Without `state`, the adapter sends the transcript text as state. Without `questions`, it asks one boolean question with id `response`.
+
+```ts
+import { createDependencies, runInference } from "@intx/inference";
+import {
+  createSystemOneAdapter,
+  SYSTEM_ONE_PROVIDER,
+  type QuestionList,
+} from "@corbits/system-one";
+
+const deps = createDependencies({
+  has: (provider) => provider === SYSTEM_ONE_PROVIDER,
+  resolve: () => createSystemOneAdapter(),
+});
 
 const questions = [
-  {
-    id: "route",
-    type: "choice",
-    instructions: "What permission decision does this request warrant?",
-    criteria: { allow: "Low-risk request", deny: "Refuse the request" },
-  },
   {
     id: "escalate",
     type: "boolean",
     instructions: "Must this request be escalated for human approval?",
   },
 ] satisfies QuestionList;
-```
 
-### Direct `evaluate()` — typed result object
-
-No Interchange runtime. You get a discriminated result: success
-(`fallback: false`) or a typed fallback (`fallback: true`). Boolean
-questions answer as native `noul` (0..1).
-
-```ts
-import { evaluate } from "@corbits/system-one";
-
-// Reads TYPESAFE_API_KEY from the environment; or pass config.apiKey.
-const result = await evaluate({
-  state: { action: "deploy", env: "production" },
-  questions,
-});
-
-if (result.fallback) console.error(result.reason, result.detail);
-else console.log(result.decisions);
-```
-
-Success looks like:
-
-```ts
-{
-  fallback: false,
-  backend: "corbits-system-one", // official endpoint; "gateway" | "custom" otherwise
-  modelId: "jev-1.13.0",
-  latencyMs: 412,
-  usage: { inputTokens: 296, outputTokens: 20 },
-  decisions: [
-    {
-      id: "route",
-      type: "choice",
-      choice: "deny",
-      confidence: 0.86,
-      probabilities: { allow: 0.14, deny: 0.86 },
-    },
-    {
-      id: "escalate",
-      type: "noul",
-      noul: 0.91,
-    },
-  ],
-}
-```
-
-No key / timeout / HTTP / parse failure looks like:
-
-```ts
-{
-  fallback: true,
-  reason: "no-key", // or "timeout" | "network" | "http-error" | "parse-error" | "backend-unreachable"
-  latencyMs: 2,
-  backendAttempted: "https://api.typesafe.ai/...",
-  detail: "no API key supplied; set config.apiKey or TYPESAFE_API_KEY or SYSTEM_ONE_API_KEY",
-}
-```
-
-Invalid caller input (bad questions, custom endpoint without `url`)
-still **throws** a `SystemOneError` — that is not a fallback.
-
-Auth: `config.apiKey`, else `TYPESAFE_API_KEY` (official),
-`AI_GATEWAY_API_KEY` / `VERCEL_OIDC_TOKEN` (gateway), else
-`SYSTEM_ONE_API_KEY`, a supported alias for every endpoint and the key for
-`custom`. Endpoint: omit for official (`jev-latest`);
-`{ kind: "gateway" }`; `{ kind: "custom", url }`.
-
-### Adapter — Interchange events, same decisions
-
-`createSystemOneAdapter()` is a `ProviderAdapter`. Register
-`"corbits-system-one"`, put questions on the call. The harness
-streams events instead of returning `EvaluateResult`.
-
-```ts
-import { createAgent, defineAgent } from "@intx/agent";
-import {
-  createSystemOneAdapter,
-  SYSTEM_ONE_PROVIDER, // "corbits-system-one"
-} from "@corbits/system-one";
-
-const def = defineAgent({
-  id: "permission-gate",
-  systemPrompt: "Decide whether this request needs human approval.",
-  tools: [],
-  capabilities: [],
-  inference: {
-    sources: [{ provider: SYSTEM_ONE_PROVIDER, model: "jev-latest" }],
-  },
-});
-
-const agent = await createAgent(def, {
+let seq = 0;
+for await (const event of runInference({
+  deps,
   source: {
-    id: SYSTEM_ONE_PROVIDER,
+    id: "system-one",
     provider: SYSTEM_ONE_PROVIDER,
+    baseURL: "https://api.typesafe.ai/v1/systemone",
+    credentialId: "TYPESAFE_API_KEY",
     model: "jev-latest",
-    apiKey: process.env.TYPESAFE_API_KEY,
-    adapter: createSystemOneAdapter(),
   },
-});
-
-const { reply } = await agent.send("Deploy to production?", {
-  providerOptions: { systemOne: { questions } },
-});
-```
-
-The adapter emits one `inference.text.delta` per decision, then usage:
-
-```ts
-{ type: "inference.text.delta", data: { index: 0, token: '{"id":"route","type":"choice","choice":"deny",...}' } }
-{ type: "inference.text.delta", data: { index: 1, token: '{"id":"escalate","type":"noul","noul":0.91}' } }
-{ type: "inference.usage", data: { usage: { input: 296, output: 20, cacheRead: 0, cacheWrite: 0, thinking: 0 } } }
-```
-
-`JSON.parse` each `token` and you have the same decision objects as
-`result.decisions`. There is no `fallback` flag on this path: a bad
-wire body is a `ProtocolMismatchError`; auth/retry stay with the
-harness (`retry-after` is surfaced for 429/529).
-
-### Workflow step
-
-Same provider and options bag:
-
-```ts
-import { defineWorkflow } from "@intx/workflow";
-import {
-  createSystemOneAdapter,
-  SYSTEM_ONE_PROVIDER,
-} from "@corbits/system-one";
-
-export const refundGate = defineWorkflow({
-  id: "refund-gate",
-  steps: [
+  turns: [
     {
-      id: "decide",
-      inference: {
-        source: {
-          provider: SYSTEM_ONE_PROVIDER,
-          model: "jev-latest",
-          adapter: createSystemOneAdapter(),
-        },
-        providerOptions: {
-          systemOne: {
-            state: { amount: 48, priorRefunds: 1 },
-            questions: [
-              {
-                id: "approve",
-                type: "boolean",
-                instructions: "Approve this refund without review?",
-              },
-            ],
-          },
-        },
-      },
+      role: "user",
+      timestamp: Date.now(),
+      content: [{ type: "text", text: "Deploy to production?" }],
     },
   ],
-});
+  inferenceOptions: { providerOptions: { systemOne: { questions } } },
+  nextSeq: () => seq++,
+  readMaterial: (id) => {
+    const secret = process.env[id];
+    if (secret === undefined) throw new Error(`${id} is not set`);
+    return { secret };
+  },
+})) {
+  if (event.type === "inference.text.delta")
+    console.log(JSON.parse(event.data.token));
+}
 ```
 
-The step's inference output is the same event list: one text delta
-whose token is `{"id":"approve","type":"noul","noul":0.2}`, then
-usage.
+The adapter emits one `inference.text.delta` per decision, whose `token` is the decision as JSON, then an `inference.usage` event. The harness supplies the credential through `readMaterial` and owns retries. A malformed response body is a `ProtocolMismatchError`, not a fallback.
 
-## Contributing
+## Upgrading from 0.1
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md).
+- `HttpError`, `NetworkError` and `TimeoutError` are removed. Transport failures return a `FallbackResult`.
+- A 2xx body that is not JSON is `parse-error` (was `network`). A timeout during the body read is `timeout`.
+- `recordTelemetryEvent` and `drainTelemetryEvents` are removed. Pass `evaluate(input, { onTelemetry })`.
+- Wire helpers, quirks presets, `JsonRecord`, `Confidence` and the env-var name constants are no longer exported.
+- A `custom` endpoint without a `model` sends `typesafe-ai/jev`.
+- Peers are `@intx/inference` and `@intx/types` `^0.4.0`.
+- Environment variables are unchanged, including `SYSTEM_ONE_API_KEY`.
 
 ## License
 
-LGPL-2.1-only.
+[LGPL-2.1-only](https://github.com/corbitsdev/corbits-system-one/blob/main/LICENSE)

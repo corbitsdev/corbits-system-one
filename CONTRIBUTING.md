@@ -21,6 +21,9 @@ bun install
 bun run check   # typecheck + lint + format:check + test
 ```
 
+`examples/quickstart.ts` and `examples/interchange.ts` are the README snippets
+verbatim. Typecheck covers them, so edit both together.
+
 Compiled `dist/` is built with `tsc -p tsconfig.build.json` (no
 bundler) and ships on npm; `prepack` rebuilds so every pack/publish
 carries fresh output.
