@@ -19,5 +19,5 @@
     "types": ["bun"],
     "paths": { "@corbits/system-one": ["./src/index.ts"] }
   },
-  "include": ["src", "examples"]
+  "include": ["src", "tests", "examples"]
 }
