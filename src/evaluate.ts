@@ -215,7 +215,7 @@ function envKey(name: string): string | undefined {
   return value === undefined || value === "" ? undefined : value;
 }
 
-/** Per-call hooks for `evaluate`; `onTelemetry` receives each lifecycle event. */
+/** Per-call hooks for `evaluate`; `onTelemetry` receives each lifecycle event and must not throw, since a throw propagates out of `evaluate`. */
 export type EvaluateOptions = {
   onTelemetry?: (event: SystemOneTelemetryEvent) => void;
 };
