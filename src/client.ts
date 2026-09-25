@@ -3,10 +3,9 @@ import {
   classifyNetworkError,
   classifyProtocolMismatch,
 } from "@intx/inference";
-import type { InferenceError } from "@intx/types/runtime";
 
 import { DEFAULT_TIMEOUT_MS } from "./config.js";
-import { SystemOneError, transportFallbackReason } from "./errors.js";
+import { SystemOneError, TransportError } from "./errors.js";
 
 // ---------------------------------------------------------------------------
 // HTTP
@@ -31,19 +30,11 @@ export type PostEvaluateResponse = {
   httpStatus: number;
 };
 
-function transportError(reason: InferenceError): SystemOneError {
-  return new SystemOneError(
-    transportFallbackReason(reason),
-    reason.message,
-    reason,
-  );
-}
-
 /**
  * POSTs an evaluation payload and returns the decoded JSON body. Sends
  * `Authorization: Bearer <apiKey>` only when a key is present; aborts the
  * exchange when `timeoutMs` elapses. A `timeoutMs` that is not a finite
- * number >= 0 falls back to `DEFAULT_TIMEOUT_MS`. Throws a `SystemOneError`
+ * number >= 0 falls back to `DEFAULT_TIMEOUT_MS`. Throws a `TransportError`
  * carrying a `timeout` classification on timeout, a `classifyHTTPError`
  * classification (status only, never the body) on non-2xx, a
  * `classifyNetworkError` classification when no HTTP exchange completes,
@@ -94,15 +85,15 @@ export async function postEvaluate(
       });
     } catch (cause) {
       if (controller.signal.aborted) {
-        throw transportError({
+        throw new TransportError({
           category: "timeout",
           message: `system-one request timed out after ${timeoutMs}ms`,
         });
       }
-      throw transportError(classifyNetworkError(cause));
+      throw new TransportError(classifyNetworkError(cause));
     }
     if (!res.ok) {
-      throw transportError(
+      throw new TransportError(
         classifyHTTPError(
           res.status,
           `system-one request failed with HTTP ${res.status}`,
@@ -113,7 +104,7 @@ export async function postEvaluate(
     try {
       data = await res.json();
     } catch {
-      throw transportError(
+      throw new TransportError(
         classifyProtocolMismatch(
           "system-one response body could not be read as JSON",
         ),

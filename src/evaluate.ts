@@ -9,7 +9,11 @@ import {
   SYSTEM_ONE_API_KEY_ENV,
   TYPESAFE_API_KEY_ENV,
 } from "./config.js";
-import { SystemOneError, transportFallbackReason } from "./errors.js";
+import {
+  SystemOneError,
+  TransportError,
+  transportFallbackReason,
+} from "./errors.js";
 import {
   APPROXIMATE_SUM_TOLERANCE as SUM_TOLERANCE,
   EvaluateInput,
@@ -225,8 +229,10 @@ function envKey(name: string): string | undefined {
  * fallback, then a fail-closed `'no-key'` fallback with zero fetch calls.
  * A `timeoutMs` that is not a finite number >= 0 falls back to
  * `DEFAULT_TIMEOUT_MS`. Transport failures map to matching fallback reasons
- * (`'timeout'`, `'network'`, `'http-error'`); backend output that fails
- * strict validation maps to `'parse-error'` with the violation in `detail`.
+ * (`'timeout'`, `'network'`, `'http-error'`, or `'parse-error'` for a 2xx
+ * body that is not JSON) with the transport message in `detail`; backend
+ * output that fails strict validation maps to `'parse-error'` with the
+ * violation in `detail`.
  * Only caller-side misuse (invalid input, a `custom` endpoint without a
  * `url`) throws, as a typed `SystemOneError`.
  */
@@ -335,12 +341,15 @@ export async function evaluate(
     data = response.data;
     transportLatencyMs = response.latencyMs;
   } catch (cause) {
-    if (!(cause instanceof SystemOneError) || cause.reason === undefined) {
-      throw cause;
-    }
+    if (!(cause instanceof TransportError)) throw cause;
     const reason = transportFallbackReason(cause.reason);
-    if (cause.reason.statusCode === undefined) return fallback(reason);
-    return fallback(reason, { httpStatus: cause.reason.statusCode });
+    if (cause.reason.statusCode === undefined) {
+      return fallback(reason, { detail: cause.message });
+    }
+    return fallback(reason, {
+      httpStatus: cause.reason.statusCode,
+      detail: cause.message,
+    });
   }
 
   const envelope = WireResponseBody(data);

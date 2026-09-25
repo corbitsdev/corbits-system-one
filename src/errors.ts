@@ -34,6 +34,15 @@ export class SystemOneError extends Error {
   }
 }
 
+/** A transport failure: always carries its `InferenceError` classification. */
+export class TransportError extends SystemOneError {
+  declare readonly reason: InferenceError;
+
+  constructor(reason: InferenceError) {
+    super(transportFallbackReason(reason), reason.message, reason);
+  }
+}
+
 /**
  * Maps a transport classification to its fallback reason: a timeout stays
  * `'timeout'`, an unreadable body is `'parse-error'`, anything with an HTTP
