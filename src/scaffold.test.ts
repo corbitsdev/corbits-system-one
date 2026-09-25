@@ -20,7 +20,6 @@ import {
   GATEWAY_QUIRKS,
   postEvaluate,
   Question,
-  recordTelemetryEvent,
   ScoreQuestion,
   SYSTEM_ONE_DEFAULT_QUIRKS,
   SYSTEM_ONE_PROVIDER,
@@ -32,7 +31,6 @@ describe("public entry", () => {
     expect(typeof evaluate).toBe("function");
     expect(typeof createSystemOneAdapter).toBe("function");
     expect(typeof postEvaluate).toBe("function");
-    expect(typeof recordTelemetryEvent).toBe("function");
     expect(typeof SYSTEM_ONE_PROVIDER).toBe("string");
     expect(SYSTEM_ONE_PROVIDER).toBe("corbits-system-one");
     expect(typeof SYSTEM_ONE_DEFAULT_QUIRKS.baseUrl).toBe("string");

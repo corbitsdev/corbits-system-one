@@ -28,10 +28,7 @@ import {
   type Question,
   type WireAnswer,
 } from "./schemas.js";
-import {
-  recordTelemetryEvent,
-  type SystemOneTelemetryEvent,
-} from "./telemetry.js";
+import type { SystemOneTelemetryEvent } from "./telemetry.js";
 
 // ---------------------------------------------------------------------------
 // evaluate
@@ -218,6 +215,11 @@ function envKey(name: string): string | undefined {
   return value === undefined || value === "" ? undefined : value;
 }
 
+/** Per-call hooks for `evaluate`; `onTelemetry` receives each lifecycle event. */
+export type EvaluateOptions = {
+  onTelemetry?: (event: SystemOneTelemetryEvent) => void;
+};
+
 /**
  * Runs one typed-decision evaluation against System One (or its gateway)
  * and returns either the backend's decisions or a typed fallback. One POST
@@ -234,11 +236,16 @@ function envKey(name: string): string | undefined {
  * output that fails strict validation maps to `'parse-error'` with the
  * violation in `detail`.
  * Only caller-side misuse (invalid input, a `custom` endpoint without a
- * `url`) throws, as a typed `SystemOneError`.
+ * `url`) throws, as a typed `SystemOneError`. Lifecycle events go to
+ * `options.onTelemetry` when supplied.
  */
 export async function evaluate(
   input: EvaluateInput,
+  options?: EvaluateOptions,
 ): Promise<EvaluateResult | FallbackResult> {
+  const emit = (event: SystemOneTelemetryEvent): void => {
+    options?.onTelemetry?.(event);
+  };
   const start = Date.now();
   const parsed = EvaluateInput(input);
   if (parsed instanceof type.errors) {
@@ -301,7 +308,7 @@ export async function evaluate(
       modelId: model,
     };
     if (extra?.detail !== undefined) event.detail = extra.detail;
-    recordTelemetryEvent(event);
+    emit(event);
     return result;
   };
 
@@ -311,7 +318,7 @@ export async function evaluate(
     latencyMs: 0,
     modelId: model,
   };
-  recordTelemetryEvent(startEvent);
+  emit(startEvent);
 
   if (apiKey === undefined || apiKey === "") {
     return fallback("no-key", {
@@ -399,6 +406,6 @@ export async function evaluate(
     latencyMs: result.latencyMs,
     modelId,
   };
-  recordTelemetryEvent(successEvent);
+  emit(successEvent);
   return result;
 }

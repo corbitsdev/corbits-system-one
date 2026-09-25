@@ -8,10 +8,8 @@ import type { ConversationTurn } from "@intx/types/runtime";
 import {
   createSystemOneAdapter,
   DEFAULT_TIMEOUT_MS,
-  drainTelemetryEvents,
   evaluate,
   GATEWAY_QUIRKS,
-  MAX_BUFFERED_TELEMETRY_EVENTS,
   postEvaluate,
   SYSTEM_ONE_DEFAULT_QUIRKS,
   SystemOneError,
@@ -20,6 +18,7 @@ import {
   type FallbackReason,
   type FallbackResult,
   type Question,
+  type SystemOneTelemetryEvent,
 } from "./index";
 
 // ---------------------------------------------------------------------------
@@ -87,7 +86,6 @@ for (const key of ENV_KEYS) savedEnv[key] = process.env[key];
 
 beforeEach(() => {
   installFetchStub();
-  drainTelemetryEvents();
   delete process.env["SYSTEM_ONE_API_KEY"];
   delete process.env["TYPESAFE_API_KEY"];
   delete process.env["AI_GATEWAY_API_KEY"];
@@ -825,6 +823,12 @@ describe("evaluate — auth and transport", () => {
       "http-error",
     );
     expect(JSON.stringify(failed)).not.toContain(secret);
+    const events: SystemOneTelemetryEvent[] = [];
+    await evaluate(
+      { ...mixedInput(), config: { apiKey: secret } },
+      { onTelemetry: (event) => events.push(event) },
+    );
+    expect(JSON.stringify(events)).not.toContain(secret);
 
     let thrown: unknown;
     try {
@@ -1006,21 +1010,20 @@ describe("adapter", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Telemetry ring
+// Telemetry
 // ---------------------------------------------------------------------------
 
 describe("telemetry", () => {
-  test("ring caps buffered events and drains in order", async () => {
+  test("onTelemetry receives start then success per call", async () => {
     behavior = () => jsonResponse(liveBody());
-    for (let i = 0; i < MAX_BUFFERED_TELEMETRY_EVENTS + 5; i++) {
-      await evaluate(keyedInput());
-    }
-    const events = drainTelemetryEvents();
-    expect(events.length).toBeLessThanOrEqual(MAX_BUFFERED_TELEMETRY_EVENTS);
-    expect(drainTelemetryEvents()).toHaveLength(0);
-    for (const event of events) {
-      expect("modelId" in event).toBe(true);
-    }
+    const events: SystemOneTelemetryEvent[] = [];
+    await evaluate(keyedInput(), {
+      onTelemetry: (event) => events.push(event),
+    });
+    expect(events.map((event) => event.event)).toEqual([
+      "evaluate.start",
+      "evaluate.success",
+    ]);
   });
 });
 
