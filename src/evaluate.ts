@@ -1,6 +1,8 @@
 import { type } from "arktype";
 
-import { postEvaluate } from "./client.js";
+import { createDefaultScheduler } from "@intx/inference";
+
+import { postEvaluate, type EvaluateDeps } from "./client.js";
 import {
   DEFAULT_TIMEOUT_MS,
   GATEWAY_API_KEY_ENV,
@@ -215,9 +217,14 @@ function envKey(name: string): string | undefined {
   return value === undefined || value === "" ? undefined : value;
 }
 
-/** Per-call hooks for `evaluate`; `onTelemetry` receives each lifecycle event and must not throw, since a throw propagates out of `evaluate`. */
+/**
+ * Per-call hooks for `evaluate`: `onTelemetry` receives each lifecycle
+ * event and must not throw, since a throw propagates out of `evaluate`;
+ * `deps` replaces the global `fetch` and `createDefaultScheduler()`.
+ */
 export type EvaluateOptions = {
   onTelemetry?: (event: SystemOneTelemetryEvent) => void;
+  deps?: EvaluateDeps;
 };
 
 /**
@@ -243,10 +250,14 @@ export async function evaluate(
   input: EvaluateInput,
   options?: EvaluateOptions,
 ): Promise<EvaluateResult | FallbackResult> {
+  const deps: EvaluateDeps = options?.deps ?? {
+    fetch: globalThis.fetch,
+    scheduler: createDefaultScheduler(),
+  };
+  const start = deps.scheduler.now();
   const emit = (event: SystemOneTelemetryEvent): void => {
     options?.onTelemetry?.(event);
   };
-  const start = Date.now();
   const parsed = EvaluateInput(input);
   if (parsed instanceof type.errors) {
     let summary = parsed.summary;
@@ -295,7 +306,7 @@ export async function evaluate(
     const result: FallbackResult = {
       fallback: true,
       reason,
-      latencyMs: Date.now() - start,
+      latencyMs: deps.scheduler.now() - start,
       backendAttempted,
     };
     if (extra?.httpStatus !== undefined) result.httpStatus = extra.httpStatus;
@@ -341,10 +352,12 @@ export async function evaluate(
   let data: unknown;
   let transportLatencyMs: number;
   try {
-    const response = await postEvaluate(endpoint.url, wire, {
-      timeoutMs,
-      apiKey,
-    });
+    const response = await postEvaluate(
+      endpoint.url,
+      wire,
+      { timeoutMs, apiKey },
+      deps,
+    );
     data = response.data;
     transportLatencyMs = response.latencyMs;
   } catch (cause) {

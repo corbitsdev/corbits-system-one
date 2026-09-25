@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   BEARER_CREDENTIAL_SENTINEL,
+  createDefaultScheduler,
   ProtocolMismatchError,
 } from "@intx/inference";
 import type { ConversationTurn } from "@intx/types/runtime";
@@ -1032,11 +1033,21 @@ describe("telemetry", () => {
 // ---------------------------------------------------------------------------
 
 describe("postEvaluate", () => {
+  const liveDeps = () => ({
+    fetch: globalThis.fetch,
+    scheduler: createDefaultScheduler(),
+  });
+
   test("sends JSON with bearer auth only when keyed", async () => {
     behavior = () => jsonResponse({ ok: true });
-    await postEvaluate("https://example.test/eval", { a: 1 }, { apiKey: "k" });
+    await postEvaluate(
+      "https://example.test/eval",
+      { a: 1 },
+      { apiKey: "k" },
+      liveDeps(),
+    );
     expect(header(firstRequest(), "authorization")).toBe("Bearer k");
-    await postEvaluate("https://example.test/eval", { a: 1 }, {});
+    await postEvaluate("https://example.test/eval", { a: 1 }, {}, liveDeps());
     expect(lastRequest().headers["authorization"]).toBeUndefined();
   });
 
@@ -1045,7 +1056,12 @@ describe("postEvaluate", () => {
       jsonResponse({ message: "denied", error_type: "auth" }, 401);
     let thrown: unknown;
     try {
-      await postEvaluate("https://example.test/eval", {}, { apiKey: "k" });
+      await postEvaluate(
+        "https://example.test/eval",
+        {},
+        { apiKey: "k" },
+        liveDeps(),
+      );
     } catch (cause) {
       thrown = cause;
     }

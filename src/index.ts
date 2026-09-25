@@ -9,7 +9,11 @@ export {
   TYPESAFE_API_KEY_ENV,
 } from "./config.js";
 export { postEvaluate } from "./client.js";
-export type { PostEvaluateOptions, PostEvaluateResponse } from "./client.js";
+export type {
+  EvaluateDeps,
+  PostEvaluateOptions,
+  PostEvaluateResponse,
+} from "./client.js";
 export { evaluate } from "./evaluate.js";
 export type { EvaluateOptions } from "./evaluate.js";
 export { createSystemOneAdapter, SYSTEM_ONE_PROVIDER } from "./adapter.js";
