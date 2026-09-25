@@ -74,6 +74,7 @@ export async function postEvaluate(
   }, timeoutMs);
   const start = deps.scheduler.now();
   // The timeout can fire while awaiting headers or while reading the body.
+  // Built by hand: @intx/inference does not export classifyTimeoutError.
   const timedOut: InferenceError = {
     category: "timeout",
     message: `system-one request timed out after ${timeoutMs}ms`,
