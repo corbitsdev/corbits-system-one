@@ -199,7 +199,7 @@ describe("evaluate over the harness transport", () => {
 });
 
 describe("evaluate on the virtual clock", () => {
-  test("a stalled /evaluate past timeoutMs fails closed with a timeout fallback", async () => {
+  test("a /evaluate body stalled past timeoutMs fails closed with a timeout fallback", async () => {
     harness = setupHarness({ enableInferenceTimers: true });
     const stall = harness.scenario.stall();
 

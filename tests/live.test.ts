@@ -1,12 +1,11 @@
 // Live check against the official /evaluate endpoint. Runs only when
-// TYPESAFE_API_KEY is set; skips otherwise.
+// TYPESAFE_API_KEY is non-empty; skips otherwise.
 
 import { describe, expect, test } from "bun:test";
 
 import { evaluate, type QuestionList } from "../src/index";
 
-const liveDescribe =
-  process.env["TYPESAFE_API_KEY"] === undefined ? describe.skip : describe;
+const liveDescribe = process.env["TYPESAFE_API_KEY"] ? describe : describe.skip;
 
 liveDescribe("live /evaluate", () => {
   test("answers one choice and one boolean question", async () => {
