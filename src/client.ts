@@ -1,10 +1,10 @@
-import { DEFAULT_TIMEOUT_MS } from "./config";
+import { DEFAULT_TIMEOUT_MS } from "./config.js";
 import {
   HttpError,
   NetworkError,
   SystemOneError,
   TimeoutError,
-} from "./errors";
+} from "./errors.js";
 
 // ---------------------------------------------------------------------------
 // HTTP

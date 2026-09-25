@@ -14,7 +14,7 @@ import type {
   TokenUsage,
 } from "@intx/types/runtime";
 
-import { resolveEndpoint } from "./config";
+import { resolveEndpoint } from "./config.js";
 import {
   Decision,
   toDecision,
@@ -24,7 +24,7 @@ import {
   State,
   type EvaluateConfig,
   type WireUsage,
-} from "./schemas";
+} from "./schemas.js";
 
 // ---------------------------------------------------------------------------
 // Adapter

@@ -1,7 +1,7 @@
 import { type } from "arktype";
 
-import { SystemOneError } from "./errors";
-import type { EndpointConfig } from "./schemas";
+import { SystemOneError } from "./errors.js";
+import type { EndpointConfig } from "./schemas.js";
 
 // ---------------------------------------------------------------------------
 // Quirks

@@ -73,8 +73,12 @@ bun run check   # typecheck + lint + format:check + test
 
 ## Distribution
 
-The package ships TypeScript source on npm as `@corbits/system-one`:
-`exports` points at `src/index.ts`, there is no build step and no `dist/`.
-Consumers install it with `bun add @corbits/system-one` and Bun runs
-the source as-is. It requires Bun >=1.2.0 per the `engines` field. To
-publish, bump the version and run `npm publish --access public`.
+The package ships compiled `dist/` on npm as `@corbits/system-one`.
+`exports["."]` maps to `dist/index.js` with types from `dist/index.d.ts`
+(top-level `main`/`types` agree). `files` is dist-only (`dist`,
+`README.md`, `LICENSE`) — `src/` never publishes. `bun run build` (`tsc -p
+tsconfig.build.json`, no bundler) emits `dist/`; `prepack` runs the build so
+every pack/publish carries fresh output. Relative imports in `src/` carry
+`.js` suffixes so the emitted ESM resolves under Node. It requires the
+Bun version in the `engines` field (1.2.0 or later). To publish, bump the
+version and run `npm publish --access public`.
