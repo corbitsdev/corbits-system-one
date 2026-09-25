@@ -65,14 +65,8 @@ describe("checkAnswers", () => {
     ["dropped answer", (a) => delete a["risk"]],
     ["kind mismatch", (a) => (a["gate"] = { type: "choice", choice: "x" })],
     ["noul without value", (a) => (a["gate"] = { type: "noul" })],
-    [
-      "illegal option",
-      (a) => (a["route"] = { ...must(a["route"]), choice: "maybe" }),
-    ],
-    [
-      "score out of range",
-      (a) => (a["risk"] = { ...must(a["risk"]), score: 9 }),
-    ],
+    ["illegal option", (a) => (must(a["route"]).choice = "maybe")],
+    ["score out of range", (a) => (must(a["risk"]).score = 9)],
     ["choice without confidence", (a) => delete must(a["route"]).confidence],
     ["missing legend", (a) => delete must(a["risk"]).legend],
     [
