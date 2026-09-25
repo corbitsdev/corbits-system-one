@@ -1,10 +1,4 @@
-export {
-  DEFAULT_TIMEOUT_MS,
-  GATEWAY_API_KEY_ENV,
-  GATEWAY_OIDC_ENV,
-  SYSTEM_ONE_API_KEY_ENV,
-  TYPESAFE_API_KEY_ENV,
-} from "./config.js";
+export { DEFAULT_TIMEOUT_MS } from "./config.js";
 export type { EvaluateDeps } from "./client.js";
 export { evaluate } from "./evaluate.js";
 export type { EvaluateOptions } from "./evaluate.js";
@@ -15,7 +9,6 @@ export { SystemOneTelemetryEvent } from "./telemetry.js";
 export {
   BooleanQuestion,
   ChoiceQuestion,
-  Confidence,
   Decision,
   Description,
   EndpointConfig,
@@ -24,7 +17,6 @@ export {
   EvaluateResult,
   FallbackReason,
   FallbackResult,
-  JsonRecord,
   NoulQuestion,
   ProbabilityMap,
   Question,
