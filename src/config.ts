@@ -40,8 +40,8 @@ export const GATEWAY_QUIRKS = {
 
 // Credential sources, one per endpoint: a TypeSafe key never authenticates
 // to the gateway and a gateway key never authenticates to TypeSafe direct,
-// so each endpoint reads its own names. `SYSTEM_ONE_API_KEY` stays as the
-// legacy universal fallback (and the key for `custom` endpoints).
+// so each endpoint reads its own names. `SYSTEM_ONE_API_KEY` is a supported
+// alias for every endpoint (and the key for `custom` endpoints).
 export const TYPESAFE_API_KEY_ENV = "TYPESAFE_API_KEY";
 export const GATEWAY_API_KEY_ENV = "AI_GATEWAY_API_KEY";
 export const GATEWAY_OIDC_ENV = "VERCEL_OIDC_TOKEN";

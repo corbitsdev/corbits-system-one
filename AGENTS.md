@@ -22,7 +22,7 @@ results — as arktype schemas. `src/index.ts` is the sole public entry:
 - `src/config.ts` — quirks-as-data: `SystemOneQuirks`, the
   `SYSTEM_ONE_DEFAULT_QUIRKS` / `GATEWAY_QUIRKS` endpoint presets, env-var
   names, `DEFAULT_TIMEOUT_MS`, and `resolveEndpoint`.
-- `src/client.ts` — the fetch POST transport (`postEvaluate`): one JSON
+- `src/client.ts` — the module-private fetch POST transport (`postEvaluate`): one JSON
   round trip with abort-bounded timeout, Bearer auth, typed errors only.
 - `src/evaluate.ts` — `evaluate()`: input validation, credential
   resolution, strict answer cross-validation, and the fallback mapping.
@@ -34,7 +34,7 @@ results — as arktype schemas. `src/index.ts` is the sole public entry:
   `reason` from the `@intx/inference` classifiers.
 - `src/telemetry.ts` — the telemetry event shape `evaluate` passes to the
   caller's `onTelemetry` sink.
-- `src/index.ts` — re-exports of the above only.
+- `src/index.ts` — re-exports the public subset of the above.
 - `*.test.ts` next to the source they cover.
 
 ## Rules
@@ -49,9 +49,11 @@ results — as arktype schemas. `src/index.ts` is the sole public entry:
   `undefined` to one.
 - No product strings baked in — anything endpoint-specific is a config field
   the caller supplies.
-- Public surface is `src/index.ts`'s export list only. Everything not
-  re-exported there is module-private. Tests go through the public entry only
-  — never import a submodule directly from a test.
+- Public surface is `src/index.ts`'s export list only: `evaluate`, the
+  adapter, the timeout default, errors, telemetry event, and the question,
+  input and result schemas. Wire types, `postEvaluate`, `toWireQuestions`,
+  `toDecision`, tolerances and endpoint quirks are module-private; unit
+  tests for them import the owning submodule.
 - Tests only for load-bearing risk (schema accept/reject on hostile input,
   timeout/fallback transitions, wire-format encoding) — not for trivial
   mapping or "returns what I passed in".
