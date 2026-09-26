@@ -2,26 +2,34 @@
   "name": "@corbits/system-one",
   "version": "0.2.0",
   "description": "Typed-decision evaluation client for System One (Jev-class) models: arktype question/decision schemas, endpoint configuration with gateway override, and timeout/fallback semantics.",
+  "homepage": "https://github.com/corbitsdev/corbits-system-one",
+  "bugs": {
+    "url": "https://github.com/corbitsdev/corbits-system-one/issues"
+  },
   "license": "LGPL-2.1-only",
   "author": "Sawyer Cutler <sawyer@dirtroad.dev>",
-  "type": "module",
-  "sideEffects": false,
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/corbitsdev/corbits-system-one.git"
+  },
   "files": [
     "dist",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
   ],
-  "publishConfig": {
-    "access": "public"
-  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     }
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -38,10 +46,6 @@
   "dependencies": {
     "arktype": "2.2.3"
   },
-  "peerDependencies": {
-    "@intx/inference": "^0.4.0",
-    "@intx/types": "^0.4.0"
-  },
   "devDependencies": {
     "@intx/inference": "0.4.0",
     "@intx/inference-testing": "0.4.0",
@@ -51,16 +55,12 @@
     "oxlint": "1.85.0",
     "typescript": "6.0.3"
   },
+  "peerDependencies": {
+    "@intx/inference": "^0.4.0",
+    "@intx/types": "^0.4.0"
+  },
   "engines": {
     "bun": ">=1.2.0",
     "node": ">=24"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/corbitsdev/corbits-system-one.git"
-  },
-  "homepage": "https://github.com/corbitsdev/corbits-system-one",
-  "bugs": {
-    "url": "https://github.com/corbitsdev/corbits-system-one/issues"
   }
 }
