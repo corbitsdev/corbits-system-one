@@ -1,11 +1,8 @@
 node_modules/
 dist/
 *.tsbuildinfo
-.corbits/
-.DS_Store
+*.tgz
+coverage/
 .env
 .env.*
-tmp/
-.devin/
-skills-lock.json
-pnpm-lock.yaml
+.DS_Store
