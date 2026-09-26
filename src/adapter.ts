@@ -160,7 +160,7 @@ export function createSystemOneAdapter(
   const source = {
     sourceId: SYSTEM_ONE_PROVIDER,
     provider: SYSTEM_ONE_PROVIDER,
-    model: endpoint.model ?? "unknown",
+    model: endpoint.model,
   };
 
   const buildRequest = (
@@ -182,7 +182,7 @@ export function createSystemOneAdapter(
       if (overrides.state !== undefined) state = overrides.state;
       if (overrides.questions !== undefined) questions = overrides.questions;
     }
-    const requestModel = model || endpoint.model || "unknown";
+    const requestModel = model || endpoint.model;
     source.model = requestModel;
     const headers: Record<string, string> = {
       "content-type": "application/json",
