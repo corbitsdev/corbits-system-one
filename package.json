@@ -2,7 +2,15 @@
   "name": "@corbits/system-one",
   "version": "0.2.0",
   "description": "Typed-decision evaluation client for System One (Jev-class) models: arktype question/decision schemas, endpoint configuration with gateway override, and timeout/fallback semantics.",
-  "homepage": "https://github.com/corbitsdev/corbits-system-one",
+  "keywords": [
+    "corbits",
+    "evaluation",
+    "inference",
+    "interchange",
+    "system-one",
+    "typesafe"
+  ],
+  "homepage": "https://github.com/corbitsdev/corbits-system-one#readme",
   "bugs": {
     "url": "https://github.com/corbitsdev/corbits-system-one/issues"
   },
@@ -15,13 +23,10 @@
   "files": [
     "dist",
     "README.md",
-    "CHANGELOG.md",
     "LICENSE"
   ],
   "type": "module",
   "sideEffects": false,
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -32,15 +37,14 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "test": "bun test",
-    "test:unit": "bun test src",
+    "test": "bun test src --pass-with-no-tests",
     "test:e2e": "bun test e2e",
-    "prepack": "bun run build",
     "check": "bun run typecheck && bun run lint && bun run format:check && bun run test"
   },
   "dependencies": {
