@@ -3,4 +3,3 @@ bun.lock
 pnpm-lock.yaml
 tmp
 .devin
-examples
