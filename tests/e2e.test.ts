@@ -13,6 +13,7 @@ import {
   Decision,
   evaluate,
   SYSTEM_ONE_PROVIDER,
+  SystemOneError,
   type EvaluateInput,
   type SystemOneTelemetryEvent,
 } from "../src/index";
@@ -130,16 +131,18 @@ async function evaluateAgainst(
   body: string,
   status: number,
   events: SystemOneTelemetryEvent[] = [],
+  call: EvaluateInput = input,
+  url: string = URL_,
 ): Promise<Awaited<ReturnType<typeof evaluate>>> {
   const active = setupHarness();
   harness = active;
   const stream = active.scenario.createStream();
-  active.scenario.whenRequestMatches((req) => req.url === URL_, stream, {
+  active.scenario.whenRequestMatches((req) => req.url === url, stream, {
     status,
     headers: { "content-type": "application/json" },
   });
   stream.enqueueAll([new TextEncoder().encode(body)], { startAt: 0 });
-  const pending = evaluate(input, {
+  const pending = evaluate(call, {
     deps: active.deps,
     onTelemetry: (event) => events.push(event),
   });
@@ -167,18 +170,114 @@ describe("evaluate over the harness transport", () => {
     ]);
   });
 
-  test("a non-2xx status is an http-error fallback carrying the status", async () => {
-    const events: SystemOneTelemetryEvent[] = [];
-    const result = await evaluateAgainst("{}", 503, events);
-    expect(result).toMatchObject({
-      fallback: true,
-      reason: "http-error",
-      httpStatus: 503,
+  test.each([503, 422])(
+    "HTTP %d is an http-error fallback carrying the status",
+    async (status) => {
+      const events: SystemOneTelemetryEvent[] = [];
+      const result = await evaluateAgainst("{}", status, events);
+      expect(result).toMatchObject({
+        fallback: true,
+        reason: "http-error",
+        httpStatus: status,
+      });
+      expect(events.at(-1)).toMatchObject({
+        event: "evaluate.fallback",
+        reason: "http-error",
+      });
+    },
+  );
+
+  test("the gateway endpoint posts to the gateway URL with the gateway model", async () => {
+    const gatewayUrl = "https://ai-gateway.vercel.sh/typesafe/v1/systemone";
+    const result = await evaluateAgainst(
+      JSON.stringify(answerBody),
+      200,
+      [],
+      {
+        state: input.state,
+        questions: input.questions,
+        config: { apiKey: "gw-key", endpoint: { kind: "gateway" } },
+      },
+      gatewayUrl,
+    );
+    expect(result).toMatchObject({ fallback: false, backend: "gateway" });
+    const [request] = harness?.scenario.matchedRequests() ?? [];
+    expect(request?.url).toBe(gatewayUrl);
+    expect(await request?.json()).toMatchObject({ model: "typesafe-ai/jev" });
+  });
+
+  test("per-decision extras are validated and never echoed", async () => {
+    const withExtra = {
+      model: answerBody.model,
+      answers: {
+        route: {
+          type: "choice",
+          choice: "deny",
+          probabilities: { allow: 0.14, deny: 0.86 },
+          confidence: 0.86,
+          reasoning: "backend note",
+        },
+        escalate: answerBody.answers.escalate,
+      },
+    };
+    const result = await evaluateAgainst(JSON.stringify(withExtra), 200);
+    expect(result.fallback === false && result.decisions[0]).toEqual({
+      id: "route",
+      type: "choice",
+      choice: "deny",
+      confidence: 0.86,
+      probabilities: { allow: 0.14, deny: 0.86 },
     });
-    expect(events.at(-1)).toMatchObject({
-      event: "evaluate.fallback",
-      reason: "http-error",
-    });
+  });
+
+  test("a custom endpoint without a url throws before any fetch", async () => {
+    harness = setupHarness();
+    let fetches = 0;
+    const pending = evaluate(
+      {
+        state: input.state,
+        questions: input.questions,
+        config: { apiKey: "key", endpoint: { kind: "custom", url: "" } },
+      },
+      {
+        deps: {
+          fetch: () => {
+            fetches += 1;
+            return Promise.reject(new Error("unexpected fetch"));
+          },
+          scheduler: harness.deps.scheduler,
+        },
+      },
+    );
+    const thrown = await pending.then(
+      () => undefined,
+      (cause: unknown) => cause,
+    );
+    expect(thrown).toBeInstanceOf(SystemOneError);
+    expect(thrown).toMatchObject({ code: "config-error" });
+    expect(fetches).toBe(0);
+  });
+
+  test("no key is a no-key fallback naming every source it checked", async () => {
+    harness = setupHarness();
+    const saved = process.env["TYPESAFE_API_KEY"];
+    const legacy = process.env["SYSTEM_ONE_API_KEY"];
+    delete process.env["TYPESAFE_API_KEY"];
+    delete process.env["SYSTEM_ONE_API_KEY"];
+    try {
+      const result = await evaluate(
+        { state: input.state, questions: input.questions },
+        { deps: harness.deps },
+      );
+      expect(result).toMatchObject({ fallback: true, reason: "no-key" });
+      const detail = result.fallback ? result.detail : undefined;
+      expect(detail).toContain("config.apiKey");
+      expect(detail).toContain("TYPESAFE_API_KEY");
+      expect(detail).toContain("SYSTEM_ONE_API_KEY");
+    } finally {
+      if (saved !== undefined) process.env["TYPESAFE_API_KEY"] = saved;
+      if (legacy !== undefined) process.env["SYSTEM_ONE_API_KEY"] = legacy;
+    }
   });
 
   test("a non-JSON 2xx body is a parse-error fallback", async () => {
