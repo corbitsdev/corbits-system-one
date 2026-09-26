@@ -11,7 +11,6 @@ import {
   drainTelemetryEvents,
   evaluate,
   GATEWAY_QUIRKS,
-  HttpError,
   MAX_BUFFERED_TELEMETRY_EVENTS,
   postEvaluate,
   SYSTEM_ONE_DEFAULT_QUIRKS,
@@ -778,9 +777,9 @@ describe("evaluate — auth and transport", () => {
     asFallback(await evaluate(keyedInput()), "network");
   });
 
-  test("non-JSON 2xx body maps to network", async () => {
+  test("non-JSON 2xx body maps to parse-error", async () => {
     behavior = () => new Response("not json{{{", { status: 200 });
-    asFallback(await evaluate(keyedInput()), "network");
+    asFallback(await evaluate(keyedInput()), "parse-error");
   });
 
   test("backendAttempted strips URL credentials", async () => {
@@ -1038,7 +1037,7 @@ describe("postEvaluate", () => {
     expect(lastRequest().headers["authorization"]).toBeUndefined();
   });
 
-  test("non-2xx throws HttpError with status", async () => {
+  test("non-2xx throws SystemOneError with an HTTP classification", async () => {
     behavior = () =>
       jsonResponse({ message: "denied", error_type: "auth" }, 401);
     let thrown: unknown;
@@ -1047,7 +1046,11 @@ describe("postEvaluate", () => {
     } catch (cause) {
       thrown = cause;
     }
-    expect(thrown).toBeInstanceOf(HttpError);
+    expect(thrown).toBeInstanceOf(SystemOneError);
+    if (!(thrown instanceof SystemOneError)) return;
+    expect(thrown.code).toBe("http-error");
+    expect(thrown.reason?.category).toBe("credential_failure");
+    expect(thrown.reason?.statusCode).toBe(401);
   });
 });
 
