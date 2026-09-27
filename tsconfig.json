@@ -16,7 +16,8 @@
     "module": "ESNext",
     "noEmit": true,
     "lib": ["ESNext"],
-    "types": ["bun"]
+    "types": ["bun"],
+    "paths": { "@corbits/system-one": ["./src/index.ts"] }
   },
-  "include": ["src"]
+  "include": ["src", "examples"]
 }
