@@ -60,10 +60,8 @@ results — as arktype schemas. `src/index.ts` is the sole public entry:
 - Tests only for load-bearing risk (schema accept/reject on hostile input,
   timeout/fallback transitions, wire-format encoding) — not for trivial
   mapping or "returns what I passed in".
-
-- The wire contract is the live Jev API — source of truth is
-  https://docs.typesafe.ai (see `api.md`, `primitives/*`). The
-  `typesafe-ai` skill is installed at `.devin/skills/typesafe-ai/`.
+- The wire contract is the live Jev API; the source of truth is
+  https://docs.typesafe.ai (`api.md`, `primitives/*`).
   `state` is `string | object | array`; `instructions` and `criteria`
   values are `string | object | array` (structured forms are legal);
   answers require their kind's fields (`noul`, `choice`/`score` +
@@ -72,19 +70,6 @@ results — as arktype schemas. `src/index.ts` is the sole public entry:
 
 ## Local development
 
+```sh
+bun install && bun run check
 ```
-bun install
-bun run check   # typecheck + lint + format:check + test
-```
-
-## Distribution
-
-The package ships compiled `dist/` on npm as `@corbits/system-one`.
-`exports["."]` maps to `dist/index.js` with types from `dist/index.d.ts`
-(top-level `main`/`types` agree). `files` is dist-only (`dist`,
-`README.md`, `LICENSE`) — `src/` never publishes. `bun run build` (`tsc -p
-tsconfig.build.json`, no bundler) emits `dist/`; `prepack` runs the build so
-every pack/publish carries fresh output. Relative imports in `src/` carry
-`.js` suffixes so the emitted ESM resolves under Node. It requires the
-Bun version in the `engines` field (1.2.0 or later). To publish, bump the
-version and run `npm publish --access public`.

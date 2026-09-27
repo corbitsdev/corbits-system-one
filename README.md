@@ -1,7 +1,5 @@
 # @corbits/system-one
 
-[![License: LGPL-2.1](https://img.shields.io/badge/license-LGPL--2.1-green.svg)](https://github.com/corbitsdev/corbits-system-one/blob/main/LICENSE)
-
 Typed choice, score and yes/no decisions about a JSON state from TypeSafe's Jev model, returned as a validated result or a typed fallback. An inference provider for Corbits and Interchange agents: registers as an `@intx/inference` adapter, and also works standalone through `evaluate()`.
 
 ## Why @corbits/system-one?
