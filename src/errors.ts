@@ -15,7 +15,9 @@ import type { FallbackReason } from "./schemas.js";
 
 /** Every error code `evaluate` can throw. Thrown-only codes (`"not-implemented"`, `"config-error"`) never appear as fallback reasons. */
 export type SystemOneErrorCode =
-  FallbackReason | "not-implemented" | "config-error";
+  | FallbackReason
+  | "not-implemented"
+  | "config-error";
 
 /** Typed error thrown when `evaluate` cannot return a result at all. */
 export class SystemOneError extends Error {
