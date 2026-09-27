@@ -125,7 +125,7 @@ function checkAnswer(
   }
   if (question.type === "choice" && answer.type === "choice") {
     if (answer.choice === undefined) return `answer "${id}" is missing choice`;
-    if (!(answer.choice in question.criteria)) {
+    if (!Object.hasOwn(question.criteria, answer.choice)) {
       return `answer "${id}" illegal option ${JSON.stringify(answer.choice)}`;
     }
     return checkProbabilities(

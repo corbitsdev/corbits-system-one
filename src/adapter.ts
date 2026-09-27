@@ -109,7 +109,11 @@ function toTokenUsage(usage: WireUsage | undefined): TokenUsage {
 function parseDecisions(
   body: string,
   provider: string,
-): { decisions: Decision[]; usage: WireUsage | undefined } {
+): {
+  decisions: Decision[];
+  model: string | undefined;
+  usage: WireUsage | undefined;
+} {
   let parsed: unknown;
   try {
     parsed = JSON.parse(body);
@@ -143,7 +147,7 @@ function parseDecisions(
       );
     }
   });
-  return { decisions, usage: envelope.usage };
+  return { decisions, model: envelope.model, usage: envelope.usage };
 }
 
 /**
@@ -157,12 +161,6 @@ export function createSystemOneAdapter(
   config?: EvaluateConfig,
 ): ProviderAdapter {
   const endpoint = resolveEndpoint(config?.endpoint);
-  const source = {
-    sourceId: SYSTEM_ONE_PROVIDER,
-    provider: SYSTEM_ONE_PROVIDER,
-    model: endpoint.model,
-  };
-
   const buildRequest = (
     messages: ConversationTurn[],
     model: string,
@@ -183,7 +181,6 @@ export function createSystemOneAdapter(
       if (overrides.questions !== undefined) questions = overrides.questions;
     }
     const requestModel = model || endpoint.model;
-    source.model = requestModel;
     const headers: Record<string, string> = {
       "content-type": "application/json",
       accept: "application/json",
@@ -201,7 +198,7 @@ export function createSystemOneAdapter(
   };
 
   const parseJSONResponse = (responseBody: string): InferenceEvent[] => {
-    const { decisions, usage } = parseDecisions(
+    const { decisions, model, usage } = parseDecisions(
       responseBody,
       SYSTEM_ONE_PROVIDER,
     );
@@ -222,9 +219,9 @@ export function createSystemOneAdapter(
       data: {
         usage: toTokenUsage(usage),
         source: {
-          sourceId: source.sourceId,
-          provider: source.provider,
-          model: source.model,
+          sourceId: SYSTEM_ONE_PROVIDER,
+          provider: SYSTEM_ONE_PROVIDER,
+          model: model ?? endpoint.model,
         },
       },
     });
