@@ -2,6 +2,7 @@ import {
   classifyHTTPError,
   classifyNetworkError,
   classifyProtocolMismatch,
+  type Dependencies,
 } from "@intx/inference";
 
 import { DEFAULT_TIMEOUT_MS } from "./config.js";
@@ -23,6 +24,9 @@ export type PostEvaluateOptions = {
   apiKey?: string;
 };
 
+/** Transport dependencies: the `fetch` to POST with and the timeout scheduler. */
+export type EvaluateDeps = Pick<Dependencies, "fetch" | "scheduler">;
+
 /** The decoded JSON body of a 2xx evaluation response, with its latency. */
 export type PostEvaluateResponse = {
   data: unknown;
@@ -33,18 +37,19 @@ export type PostEvaluateResponse = {
 /**
  * POSTs an evaluation payload and returns the decoded JSON body. Sends
  * `Authorization: Bearer <apiKey>` only when a key is present; aborts the
- * exchange when `timeoutMs` elapses. A `timeoutMs` that is not a finite
- * number >= 0 falls back to `DEFAULT_TIMEOUT_MS`. Throws a `TransportError`
- * carrying a `timeout` classification on timeout, a `classifyHTTPError`
- * classification (status only, never the body) on non-2xx, a
- * `classifyNetworkError` classification when no HTTP exchange completes,
- * and a `classifyProtocolMismatch` classification when the 2xx body is not
- * valid JSON.
+ * exchange when `timeoutMs` elapses on `deps.scheduler`. A `timeoutMs`
+ * that is not a finite number >= 0 falls back to `DEFAULT_TIMEOUT_MS`.
+ * Throws a `TransportError` carrying a `timeout` classification on
+ * timeout, a `classifyHTTPError` classification (status only, never the
+ * body) on non-2xx, a `classifyNetworkError` classification when no HTTP
+ * exchange completes, and a `classifyProtocolMismatch` classification when
+ * the 2xx body is not valid JSON.
  */
 export async function postEvaluate(
   url: string,
   body: unknown,
   options: PostEvaluateOptions,
+  deps: EvaluateDeps,
 ): Promise<PostEvaluateResponse> {
   let serialized: string;
   try {
@@ -63,10 +68,10 @@ export async function postEvaluate(
       ? rawTimeoutMs
       : DEFAULT_TIMEOUT_MS;
   const controller = new AbortController();
-  const timer = setTimeout(() => {
+  const cancelTimeout = deps.scheduler.setTimeout(() => {
     controller.abort();
   }, timeoutMs);
-  const start = Date.now();
+  const start = deps.scheduler.now();
   try {
     const headers: Record<string, string> = {
       "content-type": "application/json",
@@ -77,7 +82,7 @@ export async function postEvaluate(
     }
     let res: Response;
     try {
-      res = await fetch(url, {
+      res = await deps.fetch(url, {
         method: "POST",
         headers,
         body: serialized,
@@ -110,8 +115,12 @@ export async function postEvaluate(
         ),
       );
     }
-    return { data, latencyMs: Date.now() - start, httpStatus: res.status };
+    return {
+      data,
+      latencyMs: deps.scheduler.now() - start,
+      httpStatus: res.status,
+    };
   } finally {
-    clearTimeout(timer);
+    cancelTimeout();
   }
 }
