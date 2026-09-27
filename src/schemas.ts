@@ -355,11 +355,6 @@ export const Usage = type({
 });
 export type Usage = typeof Usage.infer;
 
-// Backwards-compatible alias: the envelope shared by `evaluate()` and the
-// provider adapter.
-export const EvaluateResponseBody = WireResponseBody;
-export type EvaluateResponseBody = typeof EvaluateResponseBody.infer;
-
 export const EvaluateResult = type({
   decisions: Decision.array(),
   modelId: "string",

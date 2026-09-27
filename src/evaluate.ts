@@ -234,8 +234,8 @@ export type EvaluateOptions = {
  * a non-empty per-call `apiKey` (an empty string falls through to the
  * environment, never shadowing it), then the endpoint's environment key —
  * `TYPESAFE_API_KEY` for official, `AI_GATEWAY_API_KEY` then
- * `VERCEL_OIDC_TOKEN` for gateway — then the legacy `SYSTEM_ONE_API_KEY`
- * fallback, then a fail-closed `'no-key'` fallback with zero fetch calls.
+ * `VERCEL_OIDC_TOKEN` for gateway — then the `SYSTEM_ONE_API_KEY` alias,
+ * then a fail-closed `'no-key'` fallback with zero fetch calls.
  * A `timeoutMs` that is not a finite number >= 0 falls back to
  * `DEFAULT_TIMEOUT_MS`. Transport failures map to matching fallback reasons
  * (`'timeout'`, `'network'`, `'http-error'`, or `'parse-error'` for a 2xx

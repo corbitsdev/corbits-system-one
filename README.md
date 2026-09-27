@@ -125,7 +125,8 @@ still **throws** a `SystemOneError` — that is not a fallback.
 
 Auth: `config.apiKey`, else `TYPESAFE_API_KEY` (official),
 `AI_GATEWAY_API_KEY` / `VERCEL_OIDC_TOKEN` (gateway), else
-`SYSTEM_ONE_API_KEY`. Endpoint: omit for official (`jev-latest`);
+`SYSTEM_ONE_API_KEY`, a supported alias for every endpoint and the key for
+`custom`. Endpoint: omit for official (`jev-latest`);
 `{ kind: "gateway" }`; `{ kind: "custom", url }`.
 
 ### Adapter — Interchange events, same decisions

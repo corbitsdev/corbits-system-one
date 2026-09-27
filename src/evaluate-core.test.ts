@@ -6,13 +6,12 @@ import {
 } from "@intx/inference";
 import type { ConversationTurn } from "@intx/types/runtime";
 
+import { postEvaluate } from "./client";
+import { GATEWAY_QUIRKS, SYSTEM_ONE_DEFAULT_QUIRKS } from "./config";
 import {
   createSystemOneAdapter,
   DEFAULT_TIMEOUT_MS,
   evaluate,
-  GATEWAY_QUIRKS,
-  postEvaluate,
-  SYSTEM_ONE_DEFAULT_QUIRKS,
   SystemOneError,
   type EvaluateInput,
   type EvaluateResult,

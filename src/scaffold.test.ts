@@ -1,7 +1,7 @@
 // Scaffold smoke test: the public entry's exports exist and the arktype
 // schemas accept/reject the shapes they own. Load-bearing only — the
 // evaluate-core step extends this file as behavior lands. Everything imports
-// through the public entry, never a submodule directly.
+// through the public entry.
 
 import { describe, expect, test } from "bun:test";
 import { type } from "arktype";
@@ -17,11 +17,8 @@ import {
   EvaluateInput,
   EvaluateResult,
   FallbackResult,
-  GATEWAY_QUIRKS,
-  postEvaluate,
   Question,
   ScoreQuestion,
-  SYSTEM_ONE_DEFAULT_QUIRKS,
   SYSTEM_ONE_PROVIDER,
   SystemOneTelemetryEvent,
 } from "./index";
@@ -30,14 +27,8 @@ describe("public entry", () => {
   test("exports exist", () => {
     expect(typeof evaluate).toBe("function");
     expect(typeof createSystemOneAdapter).toBe("function");
-    expect(typeof postEvaluate).toBe("function");
     expect(typeof SYSTEM_ONE_PROVIDER).toBe("string");
     expect(SYSTEM_ONE_PROVIDER).toBe("corbits-system-one");
-    expect(typeof SYSTEM_ONE_DEFAULT_QUIRKS.baseUrl).toBe("string");
-    expect(typeof SYSTEM_ONE_DEFAULT_QUIRKS.model).toBe("string");
-    expect(typeof GATEWAY_QUIRKS.baseUrl).toBe("string");
-    expect(GATEWAY_QUIRKS.baseUrl).toContain("gateway");
-    expect(typeof GATEWAY_QUIRKS.model).toBe("string");
   });
 
   test("evaluate fail-closes to a no-key fallback when keyless", async () => {
