@@ -12,12 +12,7 @@ export { postEvaluate } from "./client.js";
 export type { PostEvaluateOptions, PostEvaluateResponse } from "./client.js";
 export { evaluate } from "./evaluate.js";
 export { createSystemOneAdapter, SYSTEM_ONE_PROVIDER } from "./adapter.js";
-export {
-  HttpError,
-  NetworkError,
-  SystemOneError,
-  TimeoutError,
-} from "./errors.js";
+export { SystemOneError } from "./errors.js";
 export type { SystemOneErrorCode } from "./errors.js";
 export {
   drainTelemetryEvents,

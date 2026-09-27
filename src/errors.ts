@@ -1,3 +1,5 @@
+import type { InferenceError } from "@intx/types/runtime";
+
 import type { FallbackReason } from "./schemas.js";
 
 // ---------------------------------------------------------------------------
@@ -7,9 +9,9 @@ import type { FallbackReason } from "./schemas.js";
 // The typed taxonomy for every failure `evaluate` can report by throwing.
 // Failures a caller handles as data instead live on `FallbackResult`; the
 // reason literals are shared so the two can never drift apart. Transport
-// failures use the three subclasses below (never raw `TypeError`s,
-// `AbortError`s, or `SyntaxError`s); only caller-side misuse (invalid input,
-// unconfigured endpoint) throws the bare `SystemOneError`.
+// failures carry an `InferenceError` classification as `reason` (never a raw
+// `TypeError`, `AbortError`, or `SyntaxError`); caller-side misuse (invalid
+// input, unconfigured endpoint) throws without one.
 
 /** Every error code `evaluate` can throw. Thrown-only codes (`"not-implemented"`, `"config-error"`) never appear as fallback reasons. */
 export type SystemOneErrorCode =
@@ -18,53 +20,40 @@ export type SystemOneErrorCode =
 /** Typed error thrown when `evaluate` cannot return a result at all. */
 export class SystemOneError extends Error {
   readonly code: SystemOneErrorCode;
+  readonly reason?: InferenceError;
 
-  constructor(code: SystemOneErrorCode, message: string) {
+  constructor(
+    code: SystemOneErrorCode,
+    message: string,
+    reason?: InferenceError,
+  ) {
     super(message);
     this.name = "SystemOneError";
     this.code = code;
+    if (reason !== undefined) this.reason = reason;
+  }
+}
+
+/** A transport failure: always carries its `InferenceError` classification. */
+export class TransportError extends SystemOneError {
+  declare readonly reason: InferenceError;
+
+  constructor(reason: InferenceError) {
+    super(transportFallbackReason(reason), reason.message, reason);
   }
 }
 
 /**
- * The evaluation POST exceeded its timeout budget. Thrown by `postEvaluate`;
- * `evaluate` reports it as a `FallbackResult` with reason `'timeout'`.
+ * Maps a transport classification to its fallback reason: a timeout stays
+ * `'timeout'`, an unreadable body is `'parse-error'`, anything with an HTTP
+ * status is `'http-error'`, and the rest never completed an exchange
+ * (`'network'`).
  */
-export class TimeoutError extends SystemOneError {
-  readonly timeoutMs: number;
-
-  constructor(timeoutMs: number) {
-    super("timeout", `system-one request timed out after ${timeoutMs}ms`);
-    this.name = "TimeoutError";
-    this.timeoutMs = timeoutMs;
-  }
-}
-
-/**
- * The evaluation POST never completed an HTTP exchange (DNS/TLS failure,
- * refused connection, reset stream) or the 200 body was not valid JSON.
- * Thrown by `postEvaluate`; `evaluate` reports it as a `FallbackResult`
- * with reason `'network'`.
- */
-export class NetworkError extends SystemOneError {
-  constructor(message: string) {
-    super("network", message);
-    this.name = "NetworkError";
-  }
-}
-
-/**
- * The evaluation POST completed with a non-2xx status. Carries the status
- * only — never the response body, which is untrusted vendor output.
- * Thrown by `postEvaluate`; `evaluate` reports it as a `FallbackResult`
- * with reason `'http-error'`.
- */
-export class HttpError extends SystemOneError {
-  readonly httpStatus: number;
-
-  constructor(httpStatus: number) {
-    super("http-error", `system-one request failed with HTTP ${httpStatus}`);
-    this.name = "HttpError";
-    this.httpStatus = httpStatus;
-  }
+export function transportFallbackReason(
+  reason: InferenceError,
+): FallbackReason {
+  if (reason.category === "timeout") return "timeout";
+  if (reason.category === "protocol_mismatch") return "parse-error";
+  if (reason.statusCode !== undefined) return "http-error";
+  return "network";
 }

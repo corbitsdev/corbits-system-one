@@ -1,20 +1,21 @@
-import { DEFAULT_TIMEOUT_MS } from "./config.js";
 import {
-  HttpError,
-  NetworkError,
-  SystemOneError,
-  TimeoutError,
-} from "./errors.js";
+  classifyHTTPError,
+  classifyNetworkError,
+  classifyProtocolMismatch,
+} from "@intx/inference";
+
+import { DEFAULT_TIMEOUT_MS } from "./config.js";
+import { SystemOneError, TransportError } from "./errors.js";
 
 // ---------------------------------------------------------------------------
 // HTTP
 // ---------------------------------------------------------------------------
 //
 // The POST transport for evaluation requests: one JSON round trip with a
-// caller-resolved timeout and Bearer auth. Every failure is a typed error
-// from `errors.ts` — never a raw `AbortError`, `TypeError`, or
-// `SyntaxError` — so `evaluate` can map each one to a `FallbackResult`
-// reason without sniffing error shapes.
+// caller-resolved timeout and Bearer auth. Every transport failure is a
+// `SystemOneError` whose `reason` is an `InferenceError` classification —
+// never a raw `AbortError`, `TypeError`, or `SyntaxError` — so `evaluate`
+// derives the `FallbackResult` reason from data, not error shapes.
 
 /** Options for one evaluation POST: timeout and auth, resolved by `evaluate`. */
 export type PostEvaluateOptions = {
@@ -33,9 +34,11 @@ export type PostEvaluateResponse = {
  * POSTs an evaluation payload and returns the decoded JSON body. Sends
  * `Authorization: Bearer <apiKey>` only when a key is present; aborts the
  * exchange when `timeoutMs` elapses. A `timeoutMs` that is not a finite
- * number >= 0 falls back to `DEFAULT_TIMEOUT_MS`. Throws `TimeoutError` on
- * timeout, `HttpError` (status only, never the body) on non-2xx, and
- * `NetworkError` when no HTTP exchange completes or the 2xx body is not
+ * number >= 0 falls back to `DEFAULT_TIMEOUT_MS`. Throws a `TransportError`
+ * carrying a `timeout` classification on timeout, a `classifyHTTPError`
+ * classification (status only, never the body) on non-2xx, a
+ * `classifyNetworkError` classification when no HTTP exchange completes,
+ * and a `classifyProtocolMismatch` classification when the 2xx body is not
  * valid JSON.
  */
 export async function postEvaluate(
@@ -81,17 +84,31 @@ export async function postEvaluate(
         signal: controller.signal,
       });
     } catch (cause) {
-      if (controller.signal.aborted) throw new TimeoutError(timeoutMs);
-      throw new NetworkError(
-        `system-one request failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+      if (controller.signal.aborted) {
+        throw new TransportError({
+          category: "timeout",
+          message: `system-one request timed out after ${timeoutMs}ms`,
+        });
+      }
+      throw new TransportError(classifyNetworkError(cause));
+    }
+    if (!res.ok) {
+      throw new TransportError(
+        classifyHTTPError(
+          res.status,
+          `system-one request failed with HTTP ${res.status}`,
+        ),
       );
     }
-    if (!res.ok) throw new HttpError(res.status);
     let data: unknown;
     try {
       data = await res.json();
     } catch {
-      throw new NetworkError("system-one response body is not valid JSON");
+      throw new TransportError(
+        classifyProtocolMismatch(
+          "system-one response body could not be read as JSON",
+        ),
+      );
     }
     return { data, latencyMs: Date.now() - start, httpStatus: res.status };
   } finally {
