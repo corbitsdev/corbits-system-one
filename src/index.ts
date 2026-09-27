@@ -11,15 +11,11 @@ export {
 export { postEvaluate } from "./client.js";
 export type { PostEvaluateOptions, PostEvaluateResponse } from "./client.js";
 export { evaluate } from "./evaluate.js";
+export type { EvaluateOptions } from "./evaluate.js";
 export { createSystemOneAdapter, SYSTEM_ONE_PROVIDER } from "./adapter.js";
 export { SystemOneError } from "./errors.js";
 export type { SystemOneErrorCode } from "./errors.js";
-export {
-  drainTelemetryEvents,
-  MAX_BUFFERED_TELEMETRY_EVENTS,
-  recordTelemetryEvent,
-  SystemOneTelemetryEvent,
-} from "./telemetry.js";
+export { SystemOneTelemetryEvent } from "./telemetry.js";
 export {
   APPROXIMATE_SUM_TOLERANCE,
   BooleanQuestion,

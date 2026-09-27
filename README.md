@@ -259,8 +259,8 @@ usage.
 - **Schemas.** Every trust boundary is arktype (`src/schemas.ts`).
   Confidence is narrowed, not clamped. Public surface is
   `src/index.ts` only.
-- **Telemetry.** Direct `evaluate()` records `evaluate.start` /
-  `.success` / `.fallback` in-memory (`drainTelemetryEvents`). No keys
+- **Telemetry.** `evaluate(input, { onTelemetry })` passes
+  `evaluate.start` / `.success` / `.fallback` events to the sink. No keys
   in events.
 
 ## Development

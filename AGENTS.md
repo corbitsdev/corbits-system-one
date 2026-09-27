@@ -32,8 +32,8 @@ results — as arktype schemas. `src/index.ts` is the sole public entry:
 - `src/errors.ts` — the typed error taxonomy (`SystemOneError`,
   `SystemOneErrorCode`); transport failures carry an `InferenceError`
   `reason` from the `@intx/inference` classifiers.
-- `src/telemetry.ts` — the telemetry event shape and the bounded in-memory
-  ring (`recordTelemetryEvent`/`drainTelemetryEvents`).
+- `src/telemetry.ts` — the telemetry event shape `evaluate` passes to the
+  caller's `onTelemetry` sink.
 - `src/index.ts` — re-exports of the above only.
 - `*.test.ts` next to the source they cover.
 
