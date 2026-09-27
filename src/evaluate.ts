@@ -190,7 +190,7 @@ function checkProbabilities(
 // questions: the answer key set must equal the submitted id set exactly (no
 // unknowns, no drops — map keys are unique by construction), and each answer
 // must satisfy its question. Returns the first violation, if any.
-function checkAnswers(
+export function checkAnswers(
   questions: Question[],
   answers: Record<string, WireAnswer>,
 ): string | undefined {

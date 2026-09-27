@@ -219,7 +219,14 @@ export function createSystemOneAdapter(
     events.push({
       type: "inference.usage",
       seq: 0,
-      data: { usage: toTokenUsage(usage), source: { ...source } },
+      data: {
+        usage: toTokenUsage(usage),
+        source: {
+          sourceId: source.sourceId,
+          provider: source.provider,
+          model: source.model,
+        },
+      },
     });
     return events;
   };
