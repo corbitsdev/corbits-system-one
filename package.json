@@ -1,6 +1,6 @@
 {
   "name": "@corbits/system-one",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Typed-decision evaluation client for System One (Jev-class) models: arktype question/decision schemas, endpoint configuration with gateway override, and timeout/fallback semantics.",
   "license": "LGPL-2.1-only",
   "author": "Sawyer Cutler <sawyer@dirtroad.dev>",
@@ -11,6 +11,7 @@
   "files": [
     "dist",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "publishConfig": {
