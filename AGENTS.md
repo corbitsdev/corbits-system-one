@@ -39,7 +39,7 @@ results — as arktype schemas. `src/index.ts` is the sole public entry:
 ## Rules
 
 - Consume `@intx/inference` and `@intx/types` as `peerDependencies`
-  (`>=0.3.0`), pinned `0.3.0` in `devDependencies` for typecheck — never
+  (`^0.4.0`), pinned `0.4.0` in `devDependencies` for typecheck — never
   vendor, never `workspace:`. A host must resolve exactly one copy; a second
   copy breaks `instanceof` checks against the host's own classes.
 - Parse every trust boundary (caller `EvaluateInput`, every backend response
