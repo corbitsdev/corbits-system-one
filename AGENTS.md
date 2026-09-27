@@ -35,7 +35,10 @@ results — as arktype schemas. `src/index.ts` is the sole public entry:
 - `src/telemetry.ts` — the telemetry event shape `evaluate` passes to the
   caller's `onTelemetry` sink.
 - `src/index.ts` — re-exports the public subset of the above.
-- `*.test.ts` next to the source they cover.
+- `*.test.ts` next to the source they cover (pure units).
+- `tests/e2e.test.ts` — adapter turn and `evaluate` timeout through the
+  `@intx/inference-testing` harness; `tests/live.test.ts` — the real
+  endpoint, gated on `TYPESAFE_API_KEY`.
 
 ## Rules
 
