@@ -94,4 +94,18 @@ describe("adapter", () => {
     }
     expect(missingValue).toBeInstanceOf(ProtocolMismatchError);
   });
+
+  test("usage source reports the responding model, not the last request", () => {
+    const adapter = createSystemOneAdapter();
+    adapter.buildRequest(turns(), "model-a", {});
+    adapter.buildRequest(turns(), "model-b", {});
+    const answers = { response: { type: "noul", noul: 0.5 } };
+    const usageModel = (body: object) => {
+      const last = adapter.parseJSONResponse(JSON.stringify(body)).at(-1);
+      if (last?.type !== "inference.usage") throw new Error("expected usage");
+      return last.data.source.model;
+    };
+    expect(usageModel({ answers, model: "model-a-v1" })).toBe("model-a-v1");
+    expect(usageModel({ answers })).toBe("jev-latest");
+  });
 });
