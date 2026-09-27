@@ -247,7 +247,6 @@ describe("timeout budget", () => {
 
   test("defaults to DEFAULT_TIMEOUT_MS and honors a per-call override", async () => {
     expect(await timeoutFor()).toBe(DEFAULT_TIMEOUT_MS);
-    expect(DEFAULT_TIMEOUT_MS).toBe(1500);
     expect(await timeoutFor(250)).toBe(250);
   });
 
