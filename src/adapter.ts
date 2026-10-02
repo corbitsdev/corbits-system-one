@@ -11,6 +11,7 @@ import type {
   ConversationTurn,
   InferenceEvent,
   InferenceOptions,
+  LastCycleSource,
   PartialMessage,
   TokenUsage,
 } from "@intx/types/runtime";
@@ -159,10 +160,16 @@ function parseDecisions(
  * a custom URL) and the per-call model default; the inference call's own
  * `model` argument wins for the request body.
  */
-export function createSystemOneAdapter(
+function createSystemOneProviderAdapter(
   config?: EvaluateConfig,
+  source?: LastCycleSource,
 ): ProviderAdapter {
   const endpoint = resolveEndpoint(config?.endpoint);
+  const usageSource = source ?? {
+    sourceId: SYSTEM_ONE_PROVIDER,
+    provider: SYSTEM_ONE_PROVIDER,
+    model: endpoint.model,
+  };
   const buildRequest = (
     messages: ConversationTurn[],
     model: string,
@@ -221,9 +228,8 @@ export function createSystemOneAdapter(
       data: {
         usage: toTokenUsage(usage),
         source: {
-          sourceId: SYSTEM_ONE_PROVIDER,
-          provider: SYSTEM_ONE_PROVIDER,
-          model: model ?? endpoint.model,
+          ...usageSource,
+          model: model ?? usageSource.model,
         },
       },
     });
@@ -255,6 +261,12 @@ export function createSystemOneAdapter(
   };
 }
 
+export function createSystemOneAdapter(
+  config?: EvaluateConfig,
+): ProviderAdapter {
+  return createSystemOneProviderAdapter(config);
+}
+
 // Deployment quirks a hub offering carries for this provider. `questions`
 // and `state` are per-call defaults: a call's own `providerOptions.systemOne`
 // wins field by field.
@@ -272,7 +284,7 @@ const SystemOneFactoryQuirks = type({
  * `model` fills the endpoint's model when the endpoint sets none.
  */
 export const createSystemOneAdapterFactory: AdapterFactory = (
-  _source,
+  source,
   quirks,
 ) => {
   const parsed = SystemOneFactoryQuirks(quirks ?? {});
@@ -288,7 +300,7 @@ export const createSystemOneAdapterFactory: AdapterFactory = (
   if (parsed.model !== undefined && endpoint.model === undefined) {
     endpoint.model = parsed.model;
   }
-  const adapter = createSystemOneAdapter({ endpoint });
+  const adapter = createSystemOneProviderAdapter({ endpoint }, source);
   const defaults = {
     ...(parsed.state !== undefined && { state: parsed.state }),
     ...(parsed.questions !== undefined && { questions: parsed.questions }),

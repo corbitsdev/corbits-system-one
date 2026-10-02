@@ -153,6 +153,27 @@ describe("adapter factory", () => {
     expect(Object.keys(JSON.parse(override.body).questions)).toEqual(["other"]);
   });
 
+  test("usage retains the supplied source and honors the response model", () => {
+    const attributedSource = {
+      sourceId: "offering-source",
+      provider: "system-one-deployment",
+      model: "m",
+    };
+    const adapter = createSystemOneAdapterFactory(attributedSource);
+    const answers = { response: { type: "noul", noul: 0.5 } };
+    const usageSource = (body: object) => {
+      const last = adapter.parseJSONResponse(JSON.stringify(body)).at(-1);
+      if (last?.type !== "inference.usage") throw new Error("expected usage");
+      return last.data.source;
+    };
+
+    expect(usageSource({ answers })).toEqual(attributedSource);
+    expect(usageSource({ answers, model: "m-backend" })).toEqual({
+      ...attributedSource,
+      model: "m-backend",
+    });
+  });
+
   test("invalid quirks throw", () => {
     expect(() => createSystemOneAdapterFactory(source, { bogus: 1 })).toThrow(
       /invalid quirks/,
