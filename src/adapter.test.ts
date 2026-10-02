@@ -1,8 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { ProtocolMismatchError } from "@intx/inference";
+import {
+  BEARER_CREDENTIAL_SENTINEL,
+  ProtocolMismatchError,
+} from "@intx/inference";
 import type { ConversationTurn } from "@intx/types/runtime";
 
-import { createSystemOneAdapter } from "./adapter";
+import {
+  createSystemOneAdapter,
+  createSystemOneAdapterFactory,
+} from "./adapter";
 
 describe("adapter", () => {
   function turns(): ConversationTurn[] {
@@ -107,5 +113,49 @@ describe("adapter", () => {
     };
     expect(usageModel({ answers, model: "model-a-v1" })).toBe("model-a-v1");
     expect(usageModel({ answers })).toBe("jev-latest");
+  });
+});
+
+describe("adapter factory", () => {
+  const source = { sourceId: "s", provider: "corbits-system-one", model: "m" };
+  const turns = (): ConversationTurn[] => [
+    { role: "user", timestamp: 0, content: [{ type: "text", text: "Hi" }] },
+  ];
+
+  test("no quirks yields the official endpoint and sentinel auth", () => {
+    const request = createSystemOneAdapterFactory(source).buildRequest(
+      turns(),
+      "jev-latest",
+      {},
+    );
+    expect(request.url).toBe("https://api.typesafe.ai/v1/systemone");
+    expect(request.headers["authorization"]).toBe(BEARER_CREDENTIAL_SENTINEL);
+  });
+
+  test("quirks endpoint and default questions apply; call questions win", () => {
+    const adapter = createSystemOneAdapterFactory(source, {
+      endpoint: { kind: "custom", url: "https://opencode.ai/zen/v1/systemone" },
+      model: "jev-1.13",
+      questions: [{ type: "boolean", id: "gate", instructions: "Allow?" }],
+    });
+    const dflt = adapter.buildRequest(turns(), "", {});
+    expect(dflt.url).toBe("https://opencode.ai/zen/v1/systemone");
+    const body = JSON.parse(dflt.body);
+    expect(body.model).toBe("jev-1.13");
+    expect(Object.keys(body.questions)).toEqual(["gate"]);
+    const override = adapter.buildRequest(turns(), "jev-1.13", {
+      providerOptions: {
+        systemOne: {
+          questions: [{ type: "boolean", id: "other", instructions: "?" }],
+        },
+      },
+    });
+    expect(Object.keys(JSON.parse(override.body).questions)).toEqual(["other"]);
+  });
+
+  test("invalid quirks throw", () => {
+    expect(() => createSystemOneAdapterFactory(source, { bogus: 1 })).toThrow(
+      /invalid quirks/,
+    );
   });
 });

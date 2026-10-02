@@ -2,6 +2,7 @@ import { type } from "arktype";
 
 import {
   BEARER_CREDENTIAL_SENTINEL,
+  type AdapterFactory,
   ProtocolMismatchError,
   type ProviderAdapter,
 } from "@intx/inference";
@@ -20,6 +21,7 @@ import {
   toDecision,
   toWireQuestions,
   WireResponseBody,
+  EndpointConfig,
   QuestionList,
   State,
   type EvaluateConfig,
@@ -252,3 +254,61 @@ export function createSystemOneAdapter(
     extractRetryAfterMs,
   };
 }
+
+// Deployment quirks a hub offering carries for this provider. `questions`
+// and `state` are per-call defaults: a call's own `providerOptions.systemOne`
+// wins field by field.
+const SystemOneFactoryQuirks = type({
+  "endpoint?": EndpointConfig,
+  "model?": "string",
+  "questions?": QuestionList,
+  "state?": State,
+  "+": "reject",
+});
+
+/**
+ * Interchange `AdapterFactory` for `SIDECAR_ADAPTER_MANIFEST`: validates the
+ * offering's `quirks` and reuses `createSystemOneAdapter`. A top-level
+ * `model` fills the endpoint's model when the endpoint sets none.
+ */
+export const createSystemOneAdapterFactory: AdapterFactory = (
+  _source,
+  quirks,
+) => {
+  const parsed = SystemOneFactoryQuirks(quirks ?? {});
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `${SYSTEM_ONE_PROVIDER} adapter: invalid quirks: ${parsed.summary}`,
+    );
+  }
+  const endpoint: EndpointConfig = {
+    kind: "official",
+    ...parsed.endpoint,
+  };
+  if (parsed.model !== undefined && endpoint.model === undefined) {
+    endpoint.model = parsed.model;
+  }
+  const adapter = createSystemOneAdapter({ endpoint });
+  const defaults = {
+    ...(parsed.state !== undefined && { state: parsed.state }),
+    ...(parsed.questions !== undefined && { questions: parsed.questions }),
+  };
+  if (Object.keys(defaults).length === 0) return adapter;
+  return {
+    ...adapter,
+    buildRequest: (messages, model, options) => {
+      const raw: unknown = options.providerOptions?.["systemOne"];
+      const call = raw === undefined ? {} : raw;
+      return adapter.buildRequest(messages, model, {
+        ...options,
+        providerOptions: {
+          ...options.providerOptions,
+          systemOne:
+            typeof call === "object" && call !== null
+              ? { ...defaults, ...call }
+              : call,
+        },
+      });
+    },
+  };
+};

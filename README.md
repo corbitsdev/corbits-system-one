@@ -57,15 +57,16 @@ Boolean questions answer as `noul`, a probability from 0 to 1 that the answer is
 
 ## Reference
 
-| Export                            | Description                                                                      |
-| --------------------------------- | -------------------------------------------------------------------------------- |
-| `evaluate(input, options?)`       | Runs one evaluation. Returns `EvaluateResult`: decisions or a `FallbackResult`.  |
-| `createSystemOneAdapter(config?)` | Returns a `ProviderAdapter` for `runInference`. `config` is an `EvaluateConfig`. |
-| `SYSTEM_ONE_PROVIDER`             | The `"corbits-system-one"` provider id.                                          |
-| `DEFAULT_TIMEOUT_MS`              | `1500`, the default `timeoutMs`.                                                 |
-| `SystemOneError`                  | Thrown for invalid input or a `custom` endpoint without a `url`.                 |
-| `SystemOneTelemetryEvent`         | Schema and type for events passed to `onTelemetry`.                              |
-| `EvaluateOptions`, `EvaluateDeps` | Types for `options`: `onTelemetry`, and `deps: { fetch, scheduler }`.            |
+| Export                            | Description                                                                         |
+| --------------------------------- | ----------------------------------------------------------------------------------- |
+| `evaluate(input, options?)`       | Runs one evaluation. Returns `EvaluateResult`: decisions or a `FallbackResult`.     |
+| `createSystemOneAdapter(config?)` | Returns a `ProviderAdapter` for `runInference`. `config` is an `EvaluateConfig`.    |
+| `createSystemOneAdapterFactory`   | Interchange `AdapterFactory` for `SIDECAR_ADAPTER_MANIFEST`; takes offering quirks. |
+| `SYSTEM_ONE_PROVIDER`             | The `"corbits-system-one"` provider id.                                             |
+| `DEFAULT_TIMEOUT_MS`              | `1500`, the default `timeoutMs`.                                                    |
+| `SystemOneError`                  | Thrown for invalid input or a `custom` endpoint without a `url`.                    |
+| `SystemOneTelemetryEvent`         | Schema and type for events passed to `onTelemetry`.                                 |
+| `EvaluateOptions`, `EvaluateDeps` | Types for `options`: `onTelemetry`, and `deps: { fetch, scheduler }`.               |
 
 `Question`, `QuestionList`, `Decision`, `EvaluateInput`, `EvaluateConfig`, `EndpointConfig`, `EvaluateResult` and `FallbackResult` are exported as arktype schemas and types.
 
@@ -168,6 +169,42 @@ for await (const event of runInference({
 ```
 
 The adapter emits one `inference.text.delta` per decision, whose `token` is the decision as JSON, then an `inference.usage` event. The harness supplies the credential through `readMaterial` and owns retries. A malformed response body is a `ProtocolMismatchError`, not a fallback.
+
+### Manifest factory
+
+`createSystemOneAdapterFactory(source, quirks?)` is an Interchange `AdapterFactory`, so a stock sidecar loads it from `SIDECAR_ADAPTER_MANIFEST` with no custom code:
+
+```json
+[
+  {
+    "provider": "corbits-system-one",
+    "specifier": "@corbits/system-one",
+    "export": "createSystemOneAdapterFactory"
+  }
+]
+```
+
+The hub offering's `quirks` are validated and all optional:
+
+```json
+{
+  "endpoint": {
+    "kind": "custom",
+    "url": "https://opencode.ai/zen/v1/systemone"
+  },
+  "model": "jev-1.13",
+  "questions": [{ "type": "boolean", "id": "gate", "instructions": "Allow?" }],
+  "state": {}
+}
+```
+
+`questions` and `state` are per-call defaults; `providerOptions.systemOne` on a call wins field by field. A top-level `model` applies when `endpoint` sets none. Unknown keys throw. The adapter sends the bearer sentinel and the harness injects the offering's credential.
+
+| Gateway            | `endpoint`                                                       | `model`                       |
+| ------------------ | ---------------------------------------------------------------- | ----------------------------- |
+| Official (default) | omit, or `{"kind":"official"}`                                   | `jev-latest`                  |
+| Vercel AI Gateway  | `{"kind":"gateway"}`                                             | `typesafe-ai/jev`             |
+| OpenCode Zen       | `{"kind":"custom","url":"https://opencode.ai/zen/v1/systemone"}` | `jev-1.13` or `jev-1.13-free` |
 
 ## Upgrading from 0.1
 
