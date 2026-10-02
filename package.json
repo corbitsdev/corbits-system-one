@@ -1,6 +1,6 @@
 {
   "name": "@corbits/system-one",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Typed-decision evaluation client for System One (Jev-class) models: arktype question/decision schemas, endpoint configuration with gateway override, and timeout/fallback semantics.",
   "keywords": [
     "corbits",
