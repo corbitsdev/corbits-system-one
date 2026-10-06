@@ -122,13 +122,14 @@ describe("adapter factory", () => {
     { role: "user", timestamp: 0, content: [{ type: "text", text: "Hi" }] },
   ];
 
-  test("no quirks yields the official endpoint and sentinel auth", () => {
+  test("no quirks routes to the provider baseURL with sentinel auth", () => {
     const request = createSystemOneAdapterFactory(source).buildRequest(
       turns(),
       "jev-latest",
       {},
     );
-    expect(request.url).toBe("https://api.typesafe.ai/v1/systemone");
+    expect(request.url).toBe("/systemone");
+    expect(JSON.parse(request.body).model).toBe("jev-latest");
     expect(request.headers["authorization"]).toBe(BEARER_CREDENTIAL_SENTINEL);
   });
 
@@ -177,6 +178,9 @@ describe("adapter factory", () => {
   test("invalid quirks throw", () => {
     expect(() => createSystemOneAdapterFactory(source, { bogus: 1 })).toThrow(
       /invalid quirks/,
+    );
+    expect(() => createSystemOneAdapterFactory(source, { model: "" })).toThrow(
+      /model must not be empty/,
     );
   });
 });

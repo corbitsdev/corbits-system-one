@@ -198,13 +198,20 @@ The hub offering's `quirks` are validated and all optional:
 }
 ```
 
-`questions` and `state` are per-call defaults; `providerOptions.systemOne` on a call wins field by field. A top-level `model` applies when `endpoint` sets none. Unknown keys throw. The adapter sends the bearer sentinel and the harness injects the offering's credential.
+Without `endpoint`, the adapter posts to the catalog provider's `baseURL` + `/systemone`, the host the offering's credential was issued for. A `model` quirk (top level or on `endpoint`) is the model sent on the wire, so one catalog model can be served by providers that name it differently. `questions` and `state` are per-call defaults; `providerOptions.systemOne` on a call wins field by field. Unknown keys throw. The adapter sends the bearer sentinel and the harness injects the offering's credential.
 
-| Gateway            | `endpoint`                                                       | `model`                       |
-| ------------------ | ---------------------------------------------------------------- | ----------------------------- |
-| Official (default) | omit, or `{"kind":"official"}`                                   | `jev-latest`                  |
-| Vercel AI Gateway  | `{"kind":"gateway"}`                                             | `typesafe-ai/jev`             |
-| OpenCode Zen       | `{"kind":"custom","url":"https://opencode.ai/zen/v1/systemone"}` | `jev-1.13` or `jev-1.13-free` |
+| Provider          | Provider `baseURL`                         | `model` quirk                 |
+| ----------------- | ------------------------------------------ | ----------------------------- |
+| TypeSafe          | `https://api.typesafe.ai/v1`               | `jev-latest`                  |
+| Vercel AI Gateway | `https://ai-gateway.vercel.sh/typesafe/v1` | `typesafe-ai/jev`             |
+| OpenRouter        | `https://openrouter.ai/api/v1`             | `typesafe/jev-1.13`           |
+| OpenCode Zen      | `https://opencode.ai/zen/v1`               | `jev-1.13` or `jev-1.13-free` |
+
+## Upgrading to 0.3.1
+
+- `createSystemOneAdapterFactory` without an `endpoint` quirk now posts to the catalog provider's `baseURL` + `/systemone` instead of the official TypeSafe URL. Set the provider `baseURL` to the API root (for example `https://api.typesafe.ai/v1`), or keep the old behavior with `{"endpoint":{"kind":"official"}}`. The harness sends the offering's credential to whatever URL the adapter returns, so only set an explicit `endpoint` on a host that credential belongs to.
+- A `model` quirk now overrides the model the harness passes (the catalog canonical name).
+- `createSystemOneAdapter` and `evaluate` are unchanged.
 
 ## Upgrading from 0.1
 
