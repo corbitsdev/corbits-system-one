@@ -122,14 +122,30 @@ describe("adapter factory", () => {
     { role: "user", timestamp: 0, content: [{ type: "text", text: "Hi" }] },
   ];
 
-  test("no quirks yields the official endpoint and sentinel auth", () => {
+  test("no quirks routes to the provider baseURL with sentinel auth", () => {
     const request = createSystemOneAdapterFactory(source).buildRequest(
       turns(),
       "jev-latest",
       {},
     );
-    expect(request.url).toBe("https://api.typesafe.ai/v1/systemone");
+    expect(request.url).toBe("/systemone");
+    expect(JSON.parse(request.body).model).toBe("jev-latest");
     expect(request.headers["authorization"]).toBe(BEARER_CREDENTIAL_SENTINEL);
+  });
+
+  test("an explicit official endpoint keeps the absolute URL", () => {
+    const request = createSystemOneAdapterFactory(source, {
+      endpoint: { kind: "official" },
+    }).buildRequest(turns(), "jev-latest", {});
+    expect(request.url).toBe("https://api.typesafe.ai/v1/systemone");
+  });
+
+  test("a quirk model overrides the catalog model on the wire", () => {
+    const adapter = createSystemOneAdapterFactory(source, {
+      model: "typesafe-ai/jev",
+    });
+    const body = JSON.parse(adapter.buildRequest(turns(), "decision", {}).body);
+    expect(body.model).toBe("typesafe-ai/jev");
   });
 
   test("quirks endpoint and default questions apply; call questions win", () => {

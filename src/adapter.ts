@@ -278,10 +278,16 @@ const SystemOneFactoryQuirks = type({
   "+": "reject",
 });
 
+// Interchange joins a relative request path to the catalog provider's
+// `baseURL`, the same origin the offering's credential is pinned to.
+const PROVIDER_ENDPOINT: EndpointConfig = { kind: "custom", url: "/systemone" };
+
 /**
  * Interchange `AdapterFactory` for `SIDECAR_ADAPTER_MANIFEST`: validates the
- * offering's `quirks` and reuses `createSystemOneAdapter`. A top-level
- * `model` fills the endpoint's model when the endpoint sets none.
+ * offering's `quirks` and reuses `createSystemOneAdapter`. Without an
+ * `endpoint` quirk, requests go to the catalog provider's `baseURL` +
+ * `/systemone`. A quirk `model` (on `endpoint` or top level) is the model
+ * sent on the wire, overriding the catalog's canonical name.
  */
 export const createSystemOneAdapterFactory: AdapterFactory = (
   source,
@@ -293,25 +299,21 @@ export const createSystemOneAdapterFactory: AdapterFactory = (
       `${SYSTEM_ONE_PROVIDER} adapter: invalid quirks: ${parsed.summary}`,
     );
   }
-  const endpoint: EndpointConfig = {
-    kind: "official",
-    ...parsed.endpoint,
-  };
-  if (parsed.model !== undefined && endpoint.model === undefined) {
-    endpoint.model = parsed.model;
-  }
-  const adapter = createSystemOneProviderAdapter({ endpoint }, source);
+  const wireModel = parsed.endpoint?.model ?? parsed.model;
+  const adapter = createSystemOneProviderAdapter(
+    { endpoint: parsed.endpoint ?? PROVIDER_ENDPOINT },
+    source,
+  );
   const defaults = {
     ...(parsed.state !== undefined && { state: parsed.state }),
     ...(parsed.questions !== undefined && { questions: parsed.questions }),
   };
-  if (Object.keys(defaults).length === 0) return adapter;
   return {
     ...adapter,
     buildRequest: (messages, model, options) => {
       const raw: unknown = options.providerOptions?.["systemOne"];
       const call = raw === undefined ? {} : raw;
-      return adapter.buildRequest(messages, model, {
+      return adapter.buildRequest(messages, wireModel ?? model, {
         ...options,
         providerOptions: {
           ...options.providerOptions,

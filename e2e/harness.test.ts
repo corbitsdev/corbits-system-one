@@ -10,6 +10,7 @@ import type { InferenceEvent, InferenceSource } from "@intx/types/runtime";
 
 import {
   createSystemOneAdapter,
+  createSystemOneAdapterFactory,
   Decision,
   evaluate,
   SYSTEM_ONE_PROVIDER,
@@ -110,6 +111,55 @@ describe("adapter turn through runInference", () => {
     expect(events.some((event) => event.type === "inference.error")).toBe(
       false,
     );
+  });
+});
+
+describe("manifest factory through runInference", () => {
+  test("posts to the provider baseURL with the offering's wire model", async () => {
+    const baseURL = "https://gateway.test/typesafe/v1";
+    harness = setupHarness({
+      adapters: {
+        has: (provider) => provider === SYSTEM_ONE_PROVIDER,
+        resolve: (resolved, quirks) =>
+          createSystemOneAdapterFactory(resolved, quirks),
+      },
+    });
+    const stream = harness.scenario.createStream();
+    harness.scenario.whenRequestMatches(
+      (req) => req.url === `${baseURL}/systemone`,
+      stream,
+      { headers: { "content-type": "application/json" } },
+    );
+    stream.enqueueAll([new TextEncoder().encode(JSON.stringify(answerBody))], {
+      startAt: 0,
+    });
+
+    let seq = 0;
+    const drain = (async () => {
+      for await (const _ of harness.runInference({
+        turns: [
+          {
+            role: "user",
+            timestamp: 0,
+            content: [{ type: "text", text: "Deploy to production?" }],
+          },
+        ],
+        source: {
+          ...source,
+          baseURL,
+          model: "decision",
+          quirks: { model: "typesafe-ai/jev" },
+        },
+        nextSeq: () => seq++,
+        readMaterial: (credentialId) => ({ secret: credentialId }),
+      }));
+    })();
+    await harness.run();
+    await drain;
+
+    const [request] = harness.scenario.matchedRequests();
+    expect(request?.headers.get("authorization")).toBe("Bearer key");
+    expect(JSON.parse(await request!.text()).model).toBe("typesafe-ai/jev");
   });
 });
 
