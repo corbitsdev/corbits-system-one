@@ -207,7 +207,7 @@ Without `endpoint`, the adapter posts to the catalog provider's `baseURL` + `/sy
 | OpenRouter        | `https://openrouter.ai/api/v1`             | `typesafe/jev-1.13`           |
 | OpenCode Zen      | `https://opencode.ai/zen/v1`               | `jev-1.13` or `jev-1.13-free` |
 
-## Upgrading from 0.3
+## Upgrading to 0.3.1
 
 - `createSystemOneAdapterFactory` without an `endpoint` quirk now posts to the catalog provider's `baseURL` + `/systemone` instead of the official TypeSafe URL. Set the provider `baseURL` to the API root (for example `https://api.typesafe.ai/v1`), or keep the old behavior with `{"endpoint":{"kind":"official"}}`. The harness sends the offering's credential to whatever URL the adapter returns, so only set an explicit `endpoint` on a host that credential belongs to.
 - A `model` quirk now overrides the model the harness passes (the catalog canonical name).
