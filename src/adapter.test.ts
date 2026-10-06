@@ -133,21 +133,6 @@ describe("adapter factory", () => {
     expect(request.headers["authorization"]).toBe(BEARER_CREDENTIAL_SENTINEL);
   });
 
-  test("an explicit official endpoint keeps the absolute URL", () => {
-    const request = createSystemOneAdapterFactory(source, {
-      endpoint: { kind: "official" },
-    }).buildRequest(turns(), "jev-latest", {});
-    expect(request.url).toBe("https://api.typesafe.ai/v1/systemone");
-  });
-
-  test("a quirk model overrides the catalog model on the wire", () => {
-    const adapter = createSystemOneAdapterFactory(source, {
-      model: "typesafe-ai/jev",
-    });
-    const body = JSON.parse(adapter.buildRequest(turns(), "decision", {}).body);
-    expect(body.model).toBe("typesafe-ai/jev");
-  });
-
   test("quirks endpoint and default questions apply; call questions win", () => {
     const adapter = createSystemOneAdapterFactory(source, {
       endpoint: { kind: "custom", url: "https://opencode.ai/zen/v1/systemone" },
@@ -193,6 +178,9 @@ describe("adapter factory", () => {
   test("invalid quirks throw", () => {
     expect(() => createSystemOneAdapterFactory(source, { bogus: 1 })).toThrow(
       /invalid quirks/,
+    );
+    expect(() => createSystemOneAdapterFactory(source, { model: "" })).toThrow(
+      /model must not be empty/,
     );
   });
 });

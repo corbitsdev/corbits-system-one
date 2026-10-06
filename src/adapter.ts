@@ -279,12 +279,13 @@ const SystemOneFactoryQuirks = type({
 });
 
 // Interchange joins a relative request path to the catalog provider's
-// `baseURL`, the same origin the offering's credential is pinned to.
+// `baseURL`, the host the offering's credential was issued for.
 const PROVIDER_ENDPOINT: EndpointConfig = { kind: "custom", url: "/systemone" };
 
 /**
  * Interchange `AdapterFactory` for `SIDECAR_ADAPTER_MANIFEST`: validates the
- * offering's `quirks` and reuses `createSystemOneAdapter`. Without an
+ * offering's `quirks` and builds the same adapter `createSystemOneAdapter`
+ * does. Without an
  * `endpoint` quirk, requests go to the catalog provider's `baseURL` +
  * `/systemone`. A quirk `model` (on `endpoint` or top level) is the model
  * sent on the wire, overriding the catalog's canonical name.
@@ -300,6 +301,11 @@ export const createSystemOneAdapterFactory: AdapterFactory = (
     );
   }
   const wireModel = parsed.endpoint?.model ?? parsed.model;
+  if (wireModel === "") {
+    throw new Error(
+      `${SYSTEM_ONE_PROVIDER} adapter: invalid quirks: model must not be empty`,
+    );
+  }
   const adapter = createSystemOneProviderAdapter(
     { endpoint: parsed.endpoint ?? PROVIDER_ENDPOINT },
     source,

@@ -198,7 +198,7 @@ The hub offering's `quirks` are validated and all optional:
 }
 ```
 
-Without `endpoint`, the adapter posts to the catalog provider's `baseURL` + `/systemone`, the origin the offering's credential is pinned to. A `model` quirk (top level or on `endpoint`) is the model sent on the wire, so one catalog model can be served by providers that name it differently. `questions` and `state` are per-call defaults; `providerOptions.systemOne` on a call wins field by field. Unknown keys throw. The adapter sends the bearer sentinel and the harness injects the offering's credential.
+Without `endpoint`, the adapter posts to the catalog provider's `baseURL` + `/systemone`, the host the offering's credential was issued for. A `model` quirk (top level or on `endpoint`) is the model sent on the wire, so one catalog model can be served by providers that name it differently. `questions` and `state` are per-call defaults; `providerOptions.systemOne` on a call wins field by field. Unknown keys throw. The adapter sends the bearer sentinel and the harness injects the offering's credential.
 
 | Provider          | Provider `baseURL`                         | `model` quirk                 |
 | ----------------- | ------------------------------------------ | ----------------------------- |
@@ -209,7 +209,7 @@ Without `endpoint`, the adapter posts to the catalog provider's `baseURL` + `/sy
 
 ## Upgrading from 0.3
 
-- `createSystemOneAdapterFactory` without an `endpoint` quirk now posts to the catalog provider's `baseURL` + `/systemone` instead of the official TypeSafe URL. Set the provider `baseURL` to the API root (for example `https://api.typesafe.ai/v1`), or keep the old behavior with `{"endpoint":{"kind":"official"}}`.
+- `createSystemOneAdapterFactory` without an `endpoint` quirk now posts to the catalog provider's `baseURL` + `/systemone` instead of the official TypeSafe URL. Set the provider `baseURL` to the API root (for example `https://api.typesafe.ai/v1`), or keep the old behavior with `{"endpoint":{"kind":"official"}}`. The harness sends the offering's credential to whatever URL the adapter returns, so only set an explicit `endpoint` on a host that credential belongs to.
 - A `model` quirk now overrides the model the harness passes (the catalog canonical name).
 - `createSystemOneAdapter` and `evaluate` are unchanged.
 
