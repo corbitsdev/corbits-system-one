@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { createDefaultScheduler } from "@intx/inference";
 
 import type { EvaluateDeps } from "./client";
@@ -165,6 +165,32 @@ describe("evaluate without a transport", () => {
     }
     expect(thrown).toBeInstanceOf(SystemOneError);
     expect(String(thrown)).not.toContain(secret);
+  });
+});
+
+describe("evaluate with the default transport", () => {
+  test("calls the global fetch unbound, as browsers require", async () => {
+    const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        function browserLikeFetch(this: unknown): Promise<Response> {
+          if (this !== undefined && this !== globalThis) {
+            throw new TypeError("Illegal invocation");
+          }
+          return Promise.reject(new TypeError("offline"));
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
+    try {
+      const result = await evaluate({
+        state: {},
+        questions,
+        config: { apiKey: "key" },
+      });
+      expect(result).toMatchObject({ reason: "network", detail: "offline" });
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 });
 
