@@ -251,7 +251,8 @@ export async function evaluate(
   options?: EvaluateOptions,
 ): Promise<EvaluateResult | FallbackResult> {
   const deps: EvaluateDeps = options?.deps ?? {
-    fetch: globalThis.fetch,
+    // Browsers reject fetch called as a method of another object.
+    fetch: (input, init) => fetch(input, init),
     scheduler: createDefaultScheduler(),
   };
   const start = deps.scheduler.now();
