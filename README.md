@@ -18,6 +18,16 @@ bun add @corbits/system-one @intx/inference@^0.4.0 @intx/types@^0.4.0
 
 Runs on Bun >= 1.2 or Node >= 24.
 
+To consume an exact Git commit before it is published, enable the package's
+source condition because Git dependencies do not run `prepack`:
+
+```bash
+bun add github:corbitsdev/corbits-system-one#<commit>
+bun --conditions=corbits-system-one-src your-script.ts
+```
+
+Published consumers continue to use the built `dist` entry by default.
+
 ## Quickstart
 
 Needs `TYPESAFE_API_KEY` set.

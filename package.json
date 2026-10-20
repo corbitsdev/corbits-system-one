@@ -29,6 +29,7 @@
   "sideEffects": false,
   "exports": {
     ".": {
+      "corbits-system-one-src": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     }
