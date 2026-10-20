@@ -1,0 +1,24 @@
+# Corbits Triage policy.
+rules:
+  - check: max-files-changed
+    text: Flag pull requests over 30 files changed.
+    max: 30
+    reason: Large pull requests are hard to review.
+    evidence:
+      - maintainer-stated
+  - check: max-lines-changed
+    text: Flag pull requests over 3,000 lines changed.
+    max: 3000
+    reason: Large pull requests are hard to review.
+    evidence:
+      - maintainer-stated
+  - check: no-merge-conflicts
+    text: Flag merge conflicts with the base branch.
+    reason: A pull request with conflicts can't be merged as it is.
+    evidence:
+      - maintainer-stated
+  - check: ci-green
+    text: CI must pass before merge.
+    reason: A change is not ready until CI passes.
+    evidence:
+      - maintainer-stated
