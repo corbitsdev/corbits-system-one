@@ -17,15 +17,16 @@ import type {
 } from "@intx/types/runtime";
 
 import { resolveEndpoint } from "./config.js";
+import { SystemOneError } from "./errors.js";
 import {
   Decision,
   toDecision,
   toWireQuestions,
   WireResponseBody,
   EndpointConfig,
+  EvaluateConfig,
   QuestionList,
   State,
-  type EvaluateConfig,
   type WireUsage,
 } from "./schemas.js";
 
@@ -268,7 +269,15 @@ function createSystemOneProviderAdapter(
 export function createSystemOneAdapter(
   config?: EvaluateConfig,
 ): ProviderAdapter {
-  return createSystemOneProviderAdapter(config);
+  if (config === undefined) return createSystemOneProviderAdapter();
+  const parsed = EvaluateConfig(config);
+  if (parsed instanceof type.errors) {
+    throw new SystemOneError(
+      "parse-error",
+      `createSystemOneAdapter: invalid config: ${parsed.summary}`,
+    );
+  }
+  return createSystemOneProviderAdapter(parsed);
 }
 
 // Deployment quirks a hub offering carries for this provider. `questions`

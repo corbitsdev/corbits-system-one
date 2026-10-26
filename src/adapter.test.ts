@@ -9,6 +9,7 @@ import {
   createSystemOneAdapter,
   createSystemOneAdapterFactory,
 } from "./adapter";
+import { SystemOneError } from "./errors";
 
 describe("adapter", () => {
   function turns(): ConversationTurn[] {
@@ -152,6 +153,22 @@ describe("adapter factory", () => {
     expect(keyedCustom.headers["authorization"]).toBe(
       BEARER_CREDENTIAL_SENTINEL,
     );
+  });
+
+  test("invalid auth throws before a request is built", () => {
+    let thrown: unknown;
+    try {
+      createSystemOneAdapter({
+        endpoint: {
+          kind: "custom",
+          url: "https://h.test/e",
+          auth: "bearer",
+        },
+      } as unknown as Parameters<typeof createSystemOneAdapter>[0]);
+    } catch (cause) {
+      thrown = cause;
+    }
+    expect(thrown).toBeInstanceOf(SystemOneError);
   });
 
   test("no quirks routes to the provider baseURL with sentinel auth", () => {
