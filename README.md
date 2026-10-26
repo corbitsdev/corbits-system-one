@@ -222,7 +222,7 @@ Without `endpoint`, the adapter posts to the catalog provider's `baseURL` + `/sy
 
 - `createSystemOneAdapterFactory` without an `endpoint` quirk now posts to the catalog provider's `baseURL` + `/systemone` instead of the official TypeSafe URL. Set the provider `baseURL` to the API root (for example `https://api.typesafe.ai/v1`), or keep the old behavior with `{"endpoint":{"kind":"official"}}`. The harness sends the offering's credential to whatever URL the adapter returns, so only set an explicit `endpoint` on a host that credential belongs to.
 - A `model` quirk now overrides the model the harness passes (the catalog canonical name).
-- `createSystemOneAdapter` and `evaluate` are unchanged.
+- `createSystemOneAdapter` and `evaluate` accept `auth: "none"` on a custom endpoint and omit `Authorization`. Any other `auth` value throws `SystemOneError` before a request is built.
 
 ## Upgrading from 0.1
 
