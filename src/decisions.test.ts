@@ -95,7 +95,7 @@ describe("systemOne", () => {
   });
 
   test("sends images as multipart and rejects other formats first", async () => {
-    const bodies: { headers: Headers; text: string }[] = [];
+    const bodies: { headers: Headers; text: string; raw: Uint8Array }[] = [];
     const photo = image(png);
     const result = await systemOne(
       {
@@ -110,12 +110,9 @@ describe("systemOne", () => {
       {
         deps: deps(async (_url, init) => {
           const headers = new Headers(init?.headers);
-          const body = init?.body;
-          const text =
-            typeof body === "string"
-              ? body
-              : await new Response(body as Blob).text();
-          bodies.push({ headers, text });
+          const raw = await bodyBytes(init?.body);
+          const text = new TextDecoder().decode(raw);
+          bodies.push({ headers, text, raw });
           return new Response(
             JSON.stringify({
               answers: {
@@ -144,8 +141,12 @@ describe("systemOne", () => {
     if (sent === undefined) throw new Error("expected a request");
     expect(sent.headers.get("TypeSafe-Danger-Zone-Images")).toBe("true");
     expect(sent.headers.get("content-type")).toStartWith("multipart/form-data");
-    expect(sent.text).toContain('name="request"');
-    expect(sent.text).toContain('name="asset-0"');
+    const requestPart = multipartRequest(sent.headers, sent.raw);
+    const assetKey = Object.keys(requestPart.assets)[0];
+    if (assetKey === undefined) throw new Error("expected an asset");
+    expect(requestPart.assets[assetKey]?.part).toBe("asset-0");
+    expect(requestPart.parts["asset-0"]).toEqual(png);
+    expect(requestPart.jsonBytes.includes(png[0] ?? 0)).toBe(false);
     expect(sent.text).toContain("jev-preview");
 
     let fetched = false;
@@ -202,6 +203,19 @@ describe("systemOne", () => {
     ).rejects.toBeInstanceOf(SystemOneError);
     expect(fetched).toBe(false);
 
+    await expect(
+      systemOne(
+        {
+          state: { document: "state type" },
+          questions: { damaged: noul("Is it damaged?") },
+          assets: { t: image(png) },
+          config: { apiKey: "test-key" },
+        },
+        { deps: transport },
+      ),
+    ).rejects.toBeInstanceOf(SystemOneError);
+
+    const taggedBodies: { headers: Headers; raw: Uint8Array }[] = [];
     const tagged = await systemOne(
       {
         state: withAssets`compare ${photo}`,
@@ -211,19 +225,30 @@ describe("systemOne", () => {
         config: { apiKey: "test-key" },
       },
       {
-        deps: deps(
-          async () =>
-            new Response(
-              JSON.stringify({
-                answers: { same: { type: "noul", noul: 0.4 } },
-              }),
-              { status: 200 },
-            ),
-        ),
+        deps: deps(async (_url, init) => {
+          taggedBodies.push({
+            headers: new Headers(init?.headers),
+            raw: await bodyBytes(init?.body),
+          });
+          return new Response(
+            JSON.stringify({
+              answers: { same: { type: "noul", noul: 0.4 } },
+            }),
+            { status: 200 },
+          );
+        }),
       },
     );
     if (tagged.fallback) throw new Error(tagged.reason);
     expect(tagged.answers.same.noul).toBe(0.4);
+    const taggedSent = taggedBodies[0];
+    if (taggedSent === undefined) throw new Error("expected a request");
+    const taggedRequest = multipartRequest(taggedSent.headers, taggedSent.raw);
+    const taggedKey = Object.keys(taggedRequest.assets)[0];
+    if (taggedKey === undefined) throw new Error("expected an asset");
+    expect(taggedRequest.assets[taggedKey]?.part).toBe("asset-0");
+    expect(taggedRequest.parts["asset-0"]).toEqual(jpeg);
+    expect(taggedRequest.jsonBytes.includes(jpeg[0] ?? 0)).toBe(false);
 
     const joined = withAssets.join([image(png), image(jpeg)], ", ");
     expect(String(joined)).toContain("<image:");
@@ -269,3 +294,85 @@ describe("systemOne", () => {
     ).rejects.toBeInstanceOf(SystemOneError);
   });
 });
+
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47];
+
+async function bodyBytes(body: unknown): Promise<Uint8Array> {
+  if (body instanceof Uint8Array) return new Uint8Array(body);
+  if (typeof body === "string") return new TextEncoder().encode(body);
+  return new Uint8Array(await new Response(body as Blob).arrayBuffer());
+}
+
+function multipartRequest(
+  headers: Headers,
+  raw: Uint8Array,
+): {
+  assets: Record<string, { part?: string }>;
+  parts: Record<string, Uint8Array>;
+  jsonBytes: Uint8Array;
+} {
+  const contentType = headers.get("content-type") ?? "";
+  const boundary = /boundary=([^;]+)/.exec(contentType)?.[1];
+  if (boundary === undefined) throw new Error("missing multipart boundary");
+  const marker = new TextEncoder().encode(`--${boundary}`);
+  const chunks: Uint8Array[] = [];
+  let from = 0;
+  while (from < raw.length) {
+    const at = indexOfBytes(raw, marker, from);
+    if (at < 0) break;
+    if (at > from) chunks.push(raw.subarray(from, at));
+    from = at + marker.length;
+  }
+  const parts: Record<string, Uint8Array> = {};
+  let requestJson = "";
+  let jsonBytes = new Uint8Array();
+  for (const chunk of chunks) {
+    const headerEnd = indexOfBytes(
+      chunk,
+      new TextEncoder().encode("\r\n\r\n"),
+      0,
+    );
+    if (headerEnd < 0) continue;
+    const header = new TextDecoder().decode(chunk.subarray(0, headerEnd));
+    const name = /name="([^"]+)"/.exec(header)?.[1];
+    if (name === undefined) continue;
+    let content = chunk.subarray(headerEnd + 4);
+    if (
+      content.length >= 2 &&
+      content[content.length - 2] === 13 &&
+      content[content.length - 1] === 10
+    ) {
+      content = content.subarray(0, content.length - 2);
+    }
+    if (name === "request") {
+      jsonBytes = new Uint8Array(content);
+      requestJson = new TextDecoder().decode(content);
+    } else {
+      parts[name] = new Uint8Array(content);
+    }
+  }
+  const payload = JSON.parse(requestJson) as {
+    assets?: Record<string, { part?: string }>;
+  };
+  const pngAt = indexOfBytes(jsonBytes, Uint8Array.from(PNG_SIGNATURE), 0);
+  if (pngAt >= 0) throw new Error("PNG bytes leaked into the JSON part");
+  return { assets: payload.assets ?? {}, parts, jsonBytes };
+}
+
+function indexOfBytes(
+  haystack: Uint8Array,
+  needle: Uint8Array,
+  from: number,
+): number {
+  for (let index = from; index <= haystack.length - needle.length; index += 1) {
+    let match = true;
+    for (let offset = 0; offset < needle.length; offset += 1) {
+      if (haystack[index + offset] !== needle[offset]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) return index;
+  }
+  return -1;
+}

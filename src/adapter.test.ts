@@ -205,4 +205,21 @@ describe("adapter factory", () => {
     };
     expect(body.questions["category"]?.type).toBe("choice");
   });
+
+  test("parseJSONResponse rejects a box outside the image", () => {
+    const adapter = createSystemOneAdapter();
+    expect(() =>
+      adapter.parseJSONResponse(
+        JSON.stringify({
+          answers: {
+            region: {
+              type: "box",
+              box: { top: -0.1, bottom: 0.4, left: 0.2, right: 0.5 },
+              confidence: null,
+            },
+          },
+        }),
+      ),
+    ).toThrow(/outside \[0, 1\]/);
+  });
 });
