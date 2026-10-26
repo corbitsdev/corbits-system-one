@@ -1,0 +1,270 @@
+import type { EvaluateDeps } from "./client";
+import { describe, expect, test } from "bun:test";
+import { createDefaultScheduler } from "@intx/inference";
+
+import { Image, image, withAssets } from "./assets";
+import { box, choice, noul, score, systemOne } from "./decisions";
+import { SystemOneError } from "./errors";
+
+const png = Uint8Array.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00,
+]);
+const jpeg = Uint8Array.from([0xff, 0xd8, 0xff, 0x00]);
+const gif = Uint8Array.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]);
+
+function deps(fetchImpl: EvaluateDeps["fetch"]): EvaluateDeps {
+  return { fetch: fetchImpl, scheduler: createDefaultScheduler() };
+}
+
+function okBody() {
+  return {
+    model: "jev-latest",
+    answers: {
+      category: {
+        type: "choice",
+        choice: "billing",
+        probabilities: { billing: 0.8, technical: 0.2 },
+        confidence: 0.7,
+      },
+      escalate: { type: "noul", noul: 0.2 },
+      severity: {
+        type: "score",
+        score: 1,
+        legend: { "0": "none", "1": "cosmetic", "2": "unusable" },
+        probabilities: { "0": 0.2, "1": 0.6, "2": 0.2 },
+        confidence: 0.5,
+      },
+    },
+  };
+}
+
+describe("systemOne", () => {
+  test("returns named answers and falls back without throwing", async () => {
+    let calls = 0;
+    const result = await systemOne(
+      {
+        state: { document: "charged twice" },
+        questions: {
+          category: choice("What is this?", { billing: null, technical: null }),
+          escalate: noul("Must this be escalated?"),
+          severity: score("How severe?", ["none", "cosmetic", "unusable"]),
+        },
+        config: { apiKey: "test-key" },
+      },
+      {
+        deps: deps(async () => {
+          calls += 1;
+          return new Response(JSON.stringify(okBody()), { status: 200 });
+        }),
+      },
+    );
+    expect(calls).toBe(1);
+    if (result.fallback) throw new Error("expected answers");
+    expect(result.answers.category.choice).toBe("billing");
+    expect(result.answers.category.probabilities.billing).toBe(0.8);
+    expect(result.answers.category.confidence).toBe(0.7);
+    expect(result.answers.escalate.noul).toBe(0.2);
+    expect(result.answers.severity.score).toBe(1);
+
+    const fallback = await systemOne(
+      {
+        state: { document: "x" },
+        questions: { escalate: noul("Must this be escalated?") },
+      },
+      {
+        deps: deps(() => Promise.reject(new Error("fetch must not be called"))),
+      },
+    );
+    expect(fallback.fallback).toBe(true);
+    if (!fallback.fallback) throw new Error("expected fallback");
+    expect(fallback.reason).toBe("no-key");
+
+    const http = await systemOne(
+      {
+        state: { document: "x" },
+        questions: { escalate: noul("Must this be escalated?") },
+        config: { apiKey: "test-key" },
+      },
+      {
+        deps: deps(async () => new Response("no", { status: 500 })),
+      },
+    );
+    expect(http.fallback).toBe(true);
+    if (!http.fallback) throw new Error("expected fallback");
+    expect(http.reason).toBe("http-error");
+  });
+
+  test("sends images as multipart and rejects other formats first", async () => {
+    const bodies: { headers: Headers; text: string }[] = [];
+    const photo = image(png);
+    const result = await systemOne(
+      {
+        state: { photo },
+        questions: {
+          region: box("The damaged area"),
+          damaged: noul("Is it damaged?"),
+        },
+        model: "jev-preview",
+        config: { apiKey: "test-key" },
+      },
+      {
+        deps: deps(async (_url, init) => {
+          const headers = new Headers(init?.headers);
+          const body = init?.body;
+          const text =
+            typeof body === "string"
+              ? body
+              : await new Response(body as Blob).text();
+          bodies.push({ headers, text });
+          return new Response(
+            JSON.stringify({
+              answers: {
+                region: {
+                  type: "box",
+                  box: { top: 0.1, bottom: 0.4, left: 0.2, right: 0.5 },
+                  confidence: null,
+                },
+                damaged: { type: "noul", noul: 0.9 },
+              },
+            }),
+            { status: 200 },
+          );
+        }),
+      },
+    );
+    if (result.fallback) throw new Error(result.reason);
+    expect(result.answers.region.box).toEqual({
+      top: 0.1,
+      bottom: 0.4,
+      left: 0.2,
+      right: 0.5,
+    });
+    expect(result.answers.region.confidence).toBeNull();
+    const sent = bodies[0];
+    if (sent === undefined) throw new Error("expected a request");
+    expect(sent.headers.get("TypeSafe-Danger-Zone-Images")).toBe("true");
+    expect(sent.headers.get("content-type")).toStartWith("multipart/form-data");
+    expect(sent.text).toContain('name="request"');
+    expect(sent.text).toContain('name="asset-0"');
+    expect(sent.text).toContain("jev-preview");
+
+    let fetched = false;
+    let thrown: unknown;
+    try {
+      await systemOne(
+        {
+          state: image(gif),
+          questions: { damaged: noul("Is it damaged?") },
+          config: { apiKey: "test-key" },
+        },
+        {
+          deps: deps(async () => {
+            fetched = true;
+            return new Response("{}", { status: 200 });
+          }),
+        },
+      );
+    } catch (cause) {
+      thrown = cause;
+    }
+    expect(fetched).toBe(false);
+    expect(thrown).toBeInstanceOf(SystemOneError);
+  });
+
+  test("rejects a plain template image and requires every asset name", async () => {
+    const photo = image(jpeg);
+    let fetched = false;
+    const transport = deps(async () => {
+      fetched = true;
+      return new Response("{}", { status: 200 });
+    });
+    await expect(
+      systemOne(
+        {
+          state: `see ${photo}`,
+          questions: { damaged: noul("Is it damaged?") },
+          config: { apiKey: "test-key" },
+        },
+        { deps: transport },
+      ),
+    ).rejects.toBeInstanceOf(SystemOneError);
+
+    await expect(
+      systemOne(
+        {
+          state: "no photo here",
+          questions: { damaged: noul("Is it damaged?") },
+          assets: { "<catalog>": image(png) },
+          config: { apiKey: "test-key" },
+        },
+        { deps: transport },
+      ),
+    ).rejects.toBeInstanceOf(SystemOneError);
+    expect(fetched).toBe(false);
+
+    const tagged = await systemOne(
+      {
+        state: withAssets`compare ${photo}`,
+        questions: {
+          same: noul(withAssets`Does ${photo} match?`),
+        },
+        config: { apiKey: "test-key" },
+      },
+      {
+        deps: deps(
+          async () =>
+            new Response(
+              JSON.stringify({
+                answers: { same: { type: "noul", noul: 0.4 } },
+              }),
+              { status: 200 },
+            ),
+        ),
+      },
+    );
+    if (tagged.fallback) throw new Error(tagged.reason);
+    expect(tagged.answers.same.noul).toBe(0.4);
+
+    const joined = withAssets.join([image(png), image(jpeg)], ", ");
+    expect(String(joined)).toContain("<image:");
+
+    const named = await systemOne(
+      {
+        state: "See <catalog> please",
+        questions: { damaged: noul("Is <catalog> damaged?") },
+        assets: {
+          "<catalog>": Image.fromBase64(Buffer.from(png).toString("base64")),
+        },
+        config: { apiKey: "test-key" },
+      },
+      {
+        deps: deps(async (_url, init) => {
+          const text = await new Response(init?.body as Blob).text();
+          expect(text).toContain("<catalog>");
+          expect(text).toContain("image/png");
+          return new Response(
+            JSON.stringify({
+              answers: { damaged: { type: "noul", noul: 0.1 } },
+            }),
+            { status: 200 },
+          );
+        }),
+      },
+    );
+    if (named.fallback) throw new Error(named.reason);
+    expect(named.answers.damaged.noul).toBe(0.1);
+  });
+
+  test("rejects extraction questions", async () => {
+    await expect(
+      systemOne(
+        {
+          state: "x",
+          questions: { field: { type: "extract", instructions: "pull it" } },
+          config: { apiKey: "k" },
+        },
+        { deps: deps(async () => new Response("{}", { status: 200 })) },
+      ),
+    ).rejects.toBeInstanceOf(SystemOneError);
+  });
+});

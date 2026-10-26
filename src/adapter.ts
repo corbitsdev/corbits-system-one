@@ -20,6 +20,7 @@ import { resolveEndpoint } from "./config.js";
 import { SystemOneError } from "./errors.js";
 import {
   Decision,
+  DecisionQuestionRecord,
   toDecision,
   toWireQuestions,
   WireResponseBody,
@@ -52,9 +53,11 @@ export const SYSTEM_ONE_PROVIDER = "corbits-system-one";
 // `state` replaces the transcript-derived default; `questions` replaces the
 // single-question default. Both are validated, never cast — `QuestionList`
 // carries the same non-empty/unique-id contract as `EvaluateInput`.
+const QuestionsInput = QuestionList.or(DecisionQuestionRecord);
+
 const SystemOneProviderOptions = type({
   "state?": State,
-  "questions?": QuestionList,
+  "questions?": QuestionsInput,
   "+": "reject",
 });
 
@@ -85,6 +88,24 @@ const DEFAULT_QUESTIONS: QuestionList = [
     instructions: "Does this turn respond to the conversation?",
   },
 ];
+
+function asQuestionList(
+  questions: QuestionList | DecisionQuestionRecord,
+): QuestionList {
+  if (Array.isArray(questions)) return questions;
+  const compiled = Object.entries(questions).map(([id, question]) => ({
+    id,
+    ...question,
+  }));
+  const parsed = QuestionList(compiled);
+  if (parsed instanceof type.errors) {
+    throw new ProtocolMismatchError(
+      `${SYSTEM_ONE_PROVIDER} buildRequest: invalid providerOptions.systemOne questions: ${parsed.summary}`,
+      questions,
+    );
+  }
+  return parsed;
+}
 
 function transcriptText(turns: ConversationTurn[]): string {
   const texts: string[] = [];
@@ -190,7 +211,9 @@ function createSystemOneProviderAdapter(
         );
       }
       if (overrides.state !== undefined) state = overrides.state;
-      if (overrides.questions !== undefined) questions = overrides.questions;
+      if (overrides.questions !== undefined) {
+        questions = asQuestionList(overrides.questions);
+      }
     }
     const requestModel = model || endpoint.model;
     const headers: Record<string, string> = {

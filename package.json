@@ -32,6 +32,11 @@
       "corbits-system-one-src": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./decisions": {
+      "corbits-system-one-src": "./src/decisions.ts",
+      "types": "./dist/decisions.d.ts",
+      "default": "./dist/decisions.js"
     }
   },
   "publishConfig": {
