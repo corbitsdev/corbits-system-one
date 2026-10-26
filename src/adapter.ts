@@ -24,6 +24,7 @@ import {
   toDecision,
   toWireQuestions,
   WireResponseBody,
+  boxEdgesOutOfRange,
   EndpointConfig,
   EvaluateConfig,
   QuestionList,
@@ -164,6 +165,13 @@ function parseDecisions(
       );
     }
     try {
+      if (answer.type === "box") {
+        if (answer.box === undefined) {
+          throw new Error(`answer "${id}" is missing box`);
+        }
+        const violation = boxEdgesOutOfRange(id, answer.box);
+        if (violation !== undefined) throw new Error(violation);
+      }
       return toDecision(id, answer);
     } catch (cause) {
       throw new ProtocolMismatchError(

@@ -70,6 +70,10 @@ Boolean questions answer as `noul`, a probability from 0 to 1 that the answer is
 | Export                            | Description                                                                         |
 | --------------------------------- | ----------------------------------------------------------------------------------- |
 | `evaluate(input, options?)`       | Runs one evaluation. Returns `EvaluateResult`: decisions or a `FallbackResult`.     |
+| `systemOne(input, options?)`      | Keyed decisions. Returns `answers` by question name, or the same fallback.          |
+| `choice`, `noul`, `score`, `box`  | Build one keyed question. `box` locates a region and needs model `jev-preview`.     |
+| `image`, `Image.fromBase64`       | PNG or JPEG bytes, a `Blob`, or base64. Other formats are rejected before send.     |
+| `withAssets`                      | Tag a template so interpolated images are sent. Also `withAssets.join`.             |
 | `createSystemOneAdapter(config?)` | Returns a `ProviderAdapter` for `runInference`. `config` is an `EvaluateConfig`.    |
 | `createSystemOneAdapterFactory`   | Interchange `AdapterFactory` for `SIDECAR_ADAPTER_MANIFEST`; takes offering quirks. |
 | `SYSTEM_ONE_PROVIDER`             | The `"corbits-system-one"` provider id.                                             |
@@ -82,14 +86,49 @@ Boolean questions answer as `noul`, a probability from 0 to 1 that the answer is
 
 ### Questions
 
-| `type`    | Fields                                                                          | Decision fields                                  |
-| --------- | ------------------------------------------------------------------------------- | ------------------------------------------------ |
-| `choice`  | `instructions`, `criteria` (option name → description or `null`, 1–255 options) | `choice`, `probabilities`, `confidence`          |
-| `score`   | `instructions`, `criteria` (2–10 descriptions)                                  | `score`, `legend`, `probabilities`, `confidence` |
-| `boolean` | `instructions`, optional `criteria: { true?, false? }`                          | `noul`                                           |
-| `noul`    | Same as `boolean`                                                               | `noul`                                           |
+| `type`    | Fields                                                                          | Decision fields                                                     |
+| --------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `choice`  | `instructions`, `criteria` (option name → description or `null`, 1–255 options) | `choice`, `probabilities`, `confidence`                             |
+| `score`   | `instructions`, `criteria` (2–10 descriptions)                                  | `score`, `legend`, `probabilities`, `confidence`                    |
+| `boolean` | `instructions`, optional `criteria: { true?, false? }`                          | `noul`                                                              |
+| `noul`    | Same as `boolean`                                                               | `noul`                                                              |
+| `box`     | `instructions` describing what to locate. Use model `jev-preview`.              | `box` (`top`, `bottom`, `left`, `right` as fractions), `confidence` |
 
-Every question has an `id`, unique within the list.
+Every list question has an `id`, unique within the list. `box` edges outside `[0, 1]` are rejected.
+
+### Keyed questions
+
+`systemOne` takes the same state and a record of questions built with `choice`, `noul`, `score`, and `box`. The names are the answer keys. Those helpers compile to the list `evaluate` already sends. The same fallback reasons apply, and those failures do not throw. The helpers are also exported from `@corbits/system-one/decisions`.
+
+```ts
+import { choice, noul, score, systemOne } from "@corbits/system-one";
+
+const result = await systemOne({
+  state: { document: "I was charged twice." },
+  questions: {
+    category: choice("What is this?", { billing: null, technical: null }),
+    escalate: noul("Must this be escalated?"),
+    severity: score("How severe?", ["none", "cosmetic", "unusable"]),
+  },
+});
+```
+
+On success, read `result.answers.category.choice` (plus `probabilities` and `confidence`), `result.answers.escalate.noul`, and `result.answers.severity.score`.
+
+`image()` accepts a `Blob` or `Uint8Array`. `Image.fromBase64()` accepts base64 file bytes. Only PNG and JPEG are sent. Place an image in `state`, instructions, or criteria, or interpolate it with `withAssets` (and `withAssets.join` for a list). An image in an ordinary template string is rejected before the request. `assets` maps a name to an image for plain strings; every name must appear as its own token in the request. A request with any image is `multipart/form-data` and sends `TypeSafe-Danger-Zone-Images: true`. Otherwise the body stays JSON.
+
+```ts
+import { box, image, systemOne, withAssets } from "@corbits/system-one";
+
+const photo = image(pngBytes);
+const result = await systemOne({
+  state: withAssets`Returned item: ${photo}`,
+  questions: { damage: box("The damaged area") },
+  model: "jev-preview",
+});
+```
+
+`providerOptions.systemOne.questions` accepts this keyed record as well as a question list.
 
 ### Config
 

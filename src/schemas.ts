@@ -324,6 +324,20 @@ export const WireAnswer = type({
 });
 export type WireAnswer = typeof WireAnswer.infer;
 
+/** Box edges are fractions of the image. Shared by `evaluate` and the adapter. */
+export function boxEdgesOutOfRange(
+  id: string,
+  box: { top: number; bottom: number; left: number; right: number },
+): string | undefined {
+  for (const edge of ["top", "bottom", "left", "right"] as const) {
+    const value = box[edge];
+    if (!Number.isFinite(value) || value < 0 || value > 1) {
+      return `answer "${id}" box.${edge} ${String(value)} outside [0, 1]`;
+    }
+  }
+  return undefined;
+}
+
 // Token usage reported on the response envelope.
 export const WireUsage = type({
   input_tokens: "number",
