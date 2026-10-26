@@ -158,7 +158,9 @@ function parseDecisions(
  * host's single copy of `@intx/inference` (peer dependency, never vendored).
  * The optional `config` pins the endpoint (official by default, gateway, or
  * a custom URL) and the per-call model default; the inference call's own
- * `model` argument wins for the request body.
+ * `model` argument wins for the request body. Official and gateway requests
+ * carry `authorization: BEARER_CREDENTIAL_SENTINEL` so the host injects a
+ * key. A custom endpoint with `auth: "none"` omits that header.
  */
 function createSystemOneProviderAdapter(
   config?: EvaluateConfig,
@@ -193,8 +195,10 @@ function createSystemOneProviderAdapter(
     const headers: Record<string, string> = {
       "content-type": "application/json",
       accept: "application/json",
-      authorization: BEARER_CREDENTIAL_SENTINEL,
     };
+    if (endpoint.auth !== "none") {
+      headers["authorization"] = BEARER_CREDENTIAL_SENTINEL;
+    }
     return {
       url: endpoint.url,
       headers,

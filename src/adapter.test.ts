@@ -122,6 +122,38 @@ describe("adapter factory", () => {
     { role: "user", timestamp: 0, content: [{ type: "text", text: "Hi" }] },
   ];
 
+  test("buildRequest omits Authorization for custom auth none and keeps the sentinel otherwise", () => {
+    const turns = (): ConversationTurn[] => [
+      { role: "user", timestamp: 0, content: [{ type: "text", text: "Hi" }] },
+    ];
+    const keyless = createSystemOneAdapter({
+      endpoint: {
+        kind: "custom",
+        url: "https://local.test/eval",
+        auth: "none",
+      },
+    }).buildRequest(turns(), "jev-latest", {});
+    expect(keyless.headers["authorization"]).toBeUndefined();
+    expect(Object.keys(keyless.headers)).not.toContain("authorization");
+
+    const official = createSystemOneAdapter({
+      endpoint: { kind: "official" },
+    }).buildRequest(turns(), "jev-latest", {});
+    expect(official.headers["authorization"]).toBe(BEARER_CREDENTIAL_SENTINEL);
+
+    const gateway = createSystemOneAdapter({
+      endpoint: { kind: "gateway" },
+    }).buildRequest(turns(), "jev-latest", {});
+    expect(gateway.headers["authorization"]).toBe(BEARER_CREDENTIAL_SENTINEL);
+
+    const keyedCustom = createSystemOneAdapter({
+      endpoint: { kind: "custom", url: "https://h.test/e" },
+    }).buildRequest(turns(), "jev-latest", {});
+    expect(keyedCustom.headers["authorization"]).toBe(
+      BEARER_CREDENTIAL_SENTINEL,
+    );
+  });
+
   test("no quirks routes to the provider baseURL with sentinel auth", () => {
     const request = createSystemOneAdapterFactory(source).buildRequest(
       turns(),

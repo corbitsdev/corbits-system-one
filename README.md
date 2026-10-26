@@ -95,11 +95,11 @@ Every question has an `id`, unique within the list.
 
 `input.config` for `evaluate`, or the argument to `createSystemOneAdapter`:
 
-| Field       | Type             | Default                | Description                                                                      |
-| ----------- | ---------------- | ---------------------- | -------------------------------------------------------------------------------- |
-| `endpoint`  | `EndpointConfig` | `{ kind: "official" }` | `official`, `gateway`, or `custom` with a `url`. Each takes an optional `model`. |
-| `timeoutMs` | `number`         | `1500`                 | Bound for the whole round trip.                                                  |
-| `apiKey`    | `string`         | from the environment   | Overrides the environment key.                                                   |
+| Field       | Type             | Default                | Description                                                                                                       |
+| ----------- | ---------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `endpoint`  | `EndpointConfig` | `{ kind: "official" }` | `official`, `gateway`, or `custom` with a `url`. Each takes an optional `model`. `custom` may set `auth: "none"`. |
+| `timeoutMs` | `number`         | `1500`                 | Bound for the whole round trip.                                                                                   |
+| `apiKey`    | `string`         | from the environment   | Overrides the environment key.                                                                                    |
 
 ### Endpoints and keys
 
@@ -107,19 +107,20 @@ Every question has an `id`, unique within the list.
 | ---------- | ---------------------------------------------------- | ----------------- | ---------------------------------------------- |
 | `official` | `https://api.typesafe.ai/v1/systemone`               | `jev-latest`      | `TYPESAFE_API_KEY`                             |
 | `gateway`  | `https://ai-gateway.vercel.sh/typesafe/v1/systemone` | `typesafe-ai/jev` | `AI_GATEWAY_API_KEY`, then `VERCEL_OIDC_TOKEN` |
-| `custom`   | `url`                                                | `typesafe-ai/jev` | `SYSTEM_ONE_API_KEY`                           |
+| `custom`   | `url`                                                | `typesafe-ai/jev` | `SYSTEM_ONE_API_KEY`, unless `auth: "none"`    |
 
 `SYSTEM_ONE_API_KEY` is also a supported alias on every endpoint, read after the endpoint's own key.
+A custom endpoint with `auth: "none"` does not require a key and does not send `Authorization`. Official and gateway always require a key. Any other `auth` value is invalid input and throws.
 
 ### Fallback reasons
 
-| `reason`      | When                                                          |
-| ------------- | ------------------------------------------------------------- |
-| `no-key`      | No key in `apiKey` or the environment. No request is sent.    |
-| `timeout`     | The round trip, including the body read, exceeds `timeoutMs`. |
-| `network`     | The request fails before a response.                          |
-| `http-error`  | Non-2xx response. `httpStatus` holds the status.              |
-| `parse-error` | The body is not JSON or fails validation.                     |
+| `reason`      | When                                                                                                           |
+| ------------- | -------------------------------------------------------------------------------------------------------------- |
+| `no-key`      | No key in `apiKey` or the environment, and the endpoint is not custom with `auth: "none"`. No request is sent. |
+| `timeout`     | The round trip, including the body read, exceeds `timeoutMs`.                                                  |
+| `network`     | The request fails before a response.                                                                           |
+| `http-error`  | Non-2xx response. `httpStatus` holds the status.                                                               |
+| `parse-error` | The body is not JSON or fails validation.                                                                      |
 
 `detail` carries the underlying message.
 
@@ -208,7 +209,7 @@ The hub offering's `quirks` are validated and all optional:
 }
 ```
 
-Without `endpoint`, the adapter posts to the catalog provider's `baseURL` + `/systemone`, the host the offering's credential was issued for. A `model` quirk (top level or on `endpoint`) is the model sent on the wire, so one catalog model can be served by providers that name it differently. `questions` and `state` are per-call defaults; `providerOptions.systemOne` on a call wins field by field. Unknown keys throw. The adapter sends the bearer sentinel and the harness injects the offering's credential.
+Without `endpoint`, the adapter posts to the catalog provider's `baseURL` + `/systemone`, the host the offering's credential was issued for. A `model` quirk (top level or on `endpoint`) is the model sent on the wire, so one catalog model can be served by providers that name it differently. `questions` and `state` are per-call defaults; `providerOptions.systemOne` on a call wins field by field. Unknown keys throw. The adapter sends the bearer sentinel and the harness injects the offering's credential, except a custom endpoint with `auth: "none"`, which omits `Authorization` so the host does not attach a key.
 
 | Provider          | Provider `baseURL`                         | `model` quirk                 |
 | ----------------- | ------------------------------------------ | ----------------------------- |
