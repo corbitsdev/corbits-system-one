@@ -138,10 +138,13 @@ export type QuestionList = typeof QuestionList.infer;
 // `gateway` the proxy endpoint, `custom` a caller-supplied URL. `url` only
 // exists on `custom` — a `url` on another kind would be silently ignored,
 // so the schema rejects it instead of accepting misleading config.
+// `auth: "none"` exists only on `custom`: it is the explicit opt-out from
+// the fail-closed key requirement. Official and gateway cannot carry it.
 export const EndpointConfig = type({
   kind: "'custom'",
   url: "string",
   "model?": "string",
+  "auth?": "'none'",
   "+": "reject",
 }).or(
   type({

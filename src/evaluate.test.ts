@@ -230,6 +230,113 @@ async function bearerFor(
   return seen.authorization;
 }
 
+describe("custom auth none", () => {
+  const keyless: EndpointConfig = {
+    kind: "custom",
+    url: "https://local.test/eval",
+    auth: "none",
+  };
+
+  test("skips no-key and sends no Authorization, even with a key present", async () => {
+    process.env["SYSTEM_ONE_API_KEY"] = "legacy";
+    let authorization: string | null = "unset";
+    let called = false;
+    const result = await evaluate(
+      {
+        state: {},
+        questions,
+        config: { endpoint: keyless, apiKey: "should-not-send" },
+      },
+      {
+        deps: {
+          fetch: (_input, init) => {
+            called = true;
+            authorization = new Headers(init?.headers).get("authorization");
+            return Promise.resolve(
+              new Response(JSON.stringify({ answers: answers() }), {
+                status: 200,
+                headers: { "content-type": "application/json" },
+              }),
+            );
+          },
+          scheduler: createDefaultScheduler(),
+        },
+      },
+    );
+    expect(called).toBe(true);
+    expect(authorization).toBeNull();
+    if (result.fallback !== false) {
+      throw new Error(`expected decisions, got ${JSON.stringify(result)}`);
+    }
+    expect(result.decisions).toHaveLength(3);
+  });
+
+  test("official and gateway still fail closed with no-key and do not fetch", async () => {
+    const deps = {
+      fetch: () => Promise.reject(new Error("fetch must not be called")),
+      scheduler: createDefaultScheduler(),
+    };
+    const official = await evaluate(
+      { state: {}, questions, config: { endpoint: { kind: "official" } } },
+      { deps },
+    );
+    const gateway = await evaluate(
+      { state: {}, questions, config: { endpoint: { kind: "gateway" } } },
+      { deps },
+    );
+    const custom = await evaluate(
+      {
+        state: {},
+        questions,
+        config: { endpoint: { kind: "custom", url: "https://h.test/e" } },
+      },
+      { deps },
+    );
+    expect(official).toMatchObject({ fallback: true, reason: "no-key" });
+    expect(gateway).toMatchObject({ fallback: true, reason: "no-key" });
+    expect(custom).toMatchObject({ fallback: true, reason: "no-key" });
+  });
+
+  test("auth other than none is invalid input and throws", async () => {
+    let thrown: unknown;
+    try {
+      await evaluate({
+        state: {},
+        questions,
+        config: {
+          endpoint: {
+            kind: "custom",
+            url: "https://h.test/e",
+            auth: "bearer",
+          } as unknown as EndpointConfig,
+        },
+      });
+    } catch (cause) {
+      thrown = cause;
+    }
+    expect(thrown).toBeInstanceOf(SystemOneError);
+  });
+
+  test("official rejects an auth field", async () => {
+    let thrown: unknown;
+    try {
+      await evaluate({
+        state: {},
+        questions,
+        config: {
+          endpoint: {
+            kind: "official",
+            auth: "none",
+          } as unknown as EndpointConfig,
+        },
+      });
+    } catch (cause) {
+      thrown = cause;
+    }
+    expect(thrown).toBeInstanceOf(SystemOneError);
+  });
+});
+
 describe("credential precedence", () => {
   test("official prefers TYPESAFE_API_KEY, then SYSTEM_ONE_API_KEY", async () => {
     process.env["SYSTEM_ONE_API_KEY"] = "legacy";
