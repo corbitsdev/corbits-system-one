@@ -120,7 +120,18 @@ function checkAnswer(
     if (answer.noul === undefined) return `answer "${id}" is missing noul`;
     return undefined;
   }
-  if (answer.confidence === undefined) {
+  if (question.type === "box" && answer.type === "box") {
+    if (answer.box === undefined) return `answer "${id}" is missing box`;
+    const edges = answer.box;
+    for (const edge of ["top", "bottom", "left", "right"] as const) {
+      const value = edges[edge];
+      if (!Number.isFinite(value) || value < 0 || value > 1) {
+        return `answer "${id}" box.${edge} ${String(value)} outside [0, 1]`;
+      }
+    }
+    return undefined;
+  }
+  if (answer.confidence == null) {
     return `answer "${id}" is missing confidence`;
   }
   if (question.type === "choice" && answer.type === "choice") {
@@ -225,6 +236,15 @@ function envKey(name: string): string | undefined {
 export type EvaluateOptions = {
   onTelemetry?: (event: SystemOneTelemetryEvent) => void;
   deps?: EvaluateDeps;
+  /** Image parts already checked as PNG or JPEG. Omitted for JSON requests. */
+  images?: {
+    assets: Record<string, { type: "image"; part: string }>;
+    parts: {
+      name: string;
+      bytes: Uint8Array;
+      contentType: "image/png" | "image/jpeg";
+    }[];
+  };
 };
 
 /**
@@ -338,10 +358,14 @@ export async function evaluate(
     });
   }
 
+  const images = options?.images;
   const wire = WireRequest({
     model,
     state: parsed.state,
     questions: toWireQuestions(parsed.questions),
+    ...(images !== undefined && images.parts.length > 0
+      ? { assets: images.assets }
+      : {}),
   });
   if (wire instanceof type.errors) {
     throw new SystemOneError(
@@ -356,7 +380,13 @@ export async function evaluate(
     const response = await postEvaluate(
       endpoint.url,
       wire,
-      { timeoutMs, apiKey },
+      {
+        timeoutMs,
+        apiKey,
+        ...(images !== undefined && images.parts.length > 0
+          ? { imageParts: images.parts }
+          : {}),
+      },
       deps,
     );
     data = response.data;

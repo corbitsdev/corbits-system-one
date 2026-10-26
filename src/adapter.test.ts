@@ -183,4 +183,26 @@ describe("adapter factory", () => {
       /model must not be empty/,
     );
   });
+
+  test("providerOptions.systemOne accepts keyed questions", () => {
+    const adapter = createSystemOneAdapter();
+    const request = adapter.buildRequest([], "jev-latest", {
+      providerOptions: {
+        systemOne: {
+          state: "ticket",
+          questions: {
+            category: {
+              type: "choice",
+              instructions: "What?",
+              criteria: { a: null },
+            },
+          },
+        },
+      },
+    });
+    const body = JSON.parse(request.body) as {
+      questions: Record<string, { type: string }>;
+    };
+    expect(body.questions["category"]?.type).toBe("choice");
+  });
 });
