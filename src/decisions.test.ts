@@ -285,6 +285,7 @@ describe("systemOne", () => {
       systemOne(
         {
           state: "x",
+          // @ts-expect-error extraction questions are not decisions
           questions: { field: { type: "extract", instructions: "pull it" } },
           config: { apiKey: "k" },
         },

@@ -8,6 +8,7 @@ import {
   DecisionQuestionRecord,
   QuestionList,
   type Decision,
+  type DecisionQuestion,
   type Description,
   type EvaluateConfig,
   type FallbackResult,
@@ -125,13 +126,14 @@ export type SystemOneResult<Questions extends Record<string, unknown>> =
   | SystemOneSuccess<Questions>
   | FallbackResult;
 
-export type SystemOneInput<Questions extends Record<string, unknown>> = {
-  state: unknown;
-  questions: Questions;
-  assets?: Record<string, Image>;
-  model?: string;
-  config?: EvaluateConfig;
-};
+export type SystemOneInput<Questions extends Record<string, DecisionQuestion>> =
+  {
+    state: unknown;
+    questions: Questions;
+    assets?: Record<string, Image>;
+    model?: string;
+    config?: EvaluateConfig;
+  };
 
 function withModel(
   config: EvaluateConfig | undefined,
@@ -218,7 +220,7 @@ async function loadImages(
  * `fallback` and `reason` and do not throw.
  */
 export async function systemOne<
-  const Questions extends Record<string, unknown>,
+  const Questions extends Record<string, DecisionQuestion>,
 >(
   input: SystemOneInput<Questions>,
   options?: Pick<EvaluateOptions, "deps" | "onTelemetry">,
