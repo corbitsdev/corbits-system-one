@@ -196,7 +196,7 @@ export function serializeRequest(
     return value;
   });
   const unreferenced = Object.keys(assets).filter(
-    (name) => !json.includes(JSON.stringify(name).slice(1, -1)),
+    (name) => !jsonValueHasToken(json, name),
   );
   if (unreferenced.length > 0) {
     fail(
@@ -220,4 +220,41 @@ export function serializeRequest(
     json,
     assets: sent.size === 0 ? undefined : Object.fromEntries(sent),
   };
+}
+
+const IDENT = /[0-9A-Za-z_]/;
+
+/** True when `name` is its own token in a JSON string value, not a key or a substring. */
+function jsonValueHasToken(json: string, name: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return false;
+  }
+  return valueHasToken(parsed, name);
+}
+
+function valueHasToken(value: unknown, name: string): boolean {
+  if (typeof value === "string") return hasToken(value, name);
+  if (Array.isArray(value))
+    return value.some((item) => valueHasToken(item, name));
+  if (typeof value === "object" && value !== null) {
+    return Object.values(value).some((item) => valueHasToken(item, name));
+  }
+  return false;
+}
+
+function hasToken(text: string, name: string): boolean {
+  if (name.length === 0) return false;
+  let from = 0;
+  while (from <= text.length) {
+    const at = text.indexOf(name, from);
+    if (at < 0) return false;
+    const before = at === 0 ? "" : (text[at - 1] ?? "");
+    const after = text[at + name.length] ?? "";
+    if (!IDENT.test(before) && !IDENT.test(after)) return true;
+    from = at + 1;
+  }
+  return false;
 }

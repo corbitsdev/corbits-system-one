@@ -23,6 +23,7 @@ import {
   toWireQuestions,
   WireRequest,
   WireResponseBody,
+  boxEdgesOutOfRange,
   type Decision,
   type EvaluateResult,
   type FallbackReason,
@@ -122,14 +123,7 @@ function checkAnswer(
   }
   if (question.type === "box" && answer.type === "box") {
     if (answer.box === undefined) return `answer "${id}" is missing box`;
-    const edges = answer.box;
-    for (const edge of ["top", "bottom", "left", "right"] as const) {
-      const value = edges[edge];
-      if (!Number.isFinite(value) || value < 0 || value > 1) {
-        return `answer "${id}" box.${edge} ${String(value)} outside [0, 1]`;
-      }
-    }
-    return undefined;
+    return boxEdgesOutOfRange(id, answer.box);
   }
   if (answer.confidence == null) {
     return `answer "${id}" is missing confidence`;
