@@ -96,6 +96,91 @@ describe("extract", () => {
     expect(result.answers.days_to_pay.interval).toEqual({ p10: 12, p90: 45 });
   });
 
+  test("maps documented spans, estimate bounds, and list items", async () => {
+    const result = await extract(
+      {
+        state: "Invoice INV-2291 issued 2026-09-02, net 30.",
+        fields: {
+          invoice_number: text(),
+          days_to_pay: estimate({ min: 0, max: 120 }),
+          amounts: list("number"),
+          due_dates: list("date"),
+        },
+      },
+      {
+        accountId: "acct",
+        token: "tok",
+        fetch: async () =>
+          new Response(
+            JSON.stringify({
+              result: {
+                answers: {
+                  invoice_number: {
+                    type: "text",
+                    value: "INV-2291",
+                    span: [8, 16],
+                    confidence: 1,
+                    p_null: 3.8e-10,
+                  },
+                  days_to_pay: {
+                    type: "estimate",
+                    value: 30,
+                    median: 30,
+                    p10: 21,
+                    p90: 38,
+                  },
+                  amounts: { type: "list", value: [250, 80] },
+                  due_dates: { type: "list", value: ["2026-10-02"] },
+                },
+              },
+            }),
+            { status: 200 },
+          ),
+      },
+    );
+
+    if (result.fallback) throw new Error(result.detail ?? "expected answers");
+    expect(result.answers.invoice_number).toEqual({
+      value: "INV-2291",
+      start: 8,
+      end: 16,
+    });
+    expect(result.answers.days_to_pay).toEqual({
+      median: 30,
+      interval: { p10: 21, p90: 38 },
+    });
+    const amounts: number[] | null = result.answers.amounts.value;
+    expect(amounts).toEqual([250, 80]);
+    expect(result.answers.due_dates.value).toEqual(["2026-10-02"]);
+  });
+
+  test("rejects a non-string text value instead of a successful null", async () => {
+    const result = await extract(
+      { state: "x", fields: { invoice_number: text() } },
+      {
+        accountId: "acct",
+        token: "tok",
+        fetch: async () =>
+          new Response(
+            JSON.stringify({
+              result: {
+                answers: {
+                  invoice_number: { type: "text", value: 1080 },
+                },
+              },
+            }),
+            { status: 200 },
+          ),
+      },
+    );
+
+    expect(result).toMatchObject({ fallback: true, reason: "parse-error" });
+    if (!result.fallback) {
+      const value: string | null = result.answers.invoice_number.value;
+      expect(value).not.toBeNull();
+    }
+  });
+
   test("falls back without credentials, on non-2xx, and on bad JSON", async () => {
     const missing = await extract(
       { state: "x", fields: { invoice_number: text() } },
@@ -151,6 +236,18 @@ describe("extraction and decisions stay disjoint", () => {
           category: choice("What is this?", { billing: null }),
         },
       });
+
+      const listed = await extract(
+        { state: "x", fields: { amounts: list("number") } },
+        { fetch: () => Promise.reject(new Error("no fetch")) },
+      );
+      if (!listed.fallback) {
+        function stringsOnly(value: string[] | null): string[] | null {
+          return value;
+        }
+        // @ts-expect-error number lists are not string[]
+        stringsOnly(listed.answers.amounts.value);
+      }
     }
     expect(probe).toBeFunction();
   });
