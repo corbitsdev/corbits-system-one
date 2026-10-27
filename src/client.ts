@@ -40,6 +40,18 @@ export type PostEvaluateResponse = {
   httpStatus: number;
 };
 
+function bodyHasBoxQuestion(body: unknown): boolean {
+  if (typeof body !== "object" || body === null) return false;
+  if (!Object.hasOwn(body, "questions")) return false;
+  const questions = Object.getOwnPropertyDescriptor(body, "questions")?.value;
+  if (typeof questions !== "object" || questions === null) return false;
+  return Object.values(questions).some((question) => {
+    if (typeof question !== "object" || question === null) return false;
+    if (!Object.hasOwn(question, "type")) return false;
+    return Object.getOwnPropertyDescriptor(question, "type")?.value === "box";
+  });
+}
+
 function encodeMultipart(
   payload: unknown,
   parts: NonNullable<PostEvaluateOptions["imageParts"]>,
@@ -152,7 +164,10 @@ export async function postEvaluate(
       "content-type": contentType,
       accept: "application/json",
     };
-    if (imageParts !== undefined && imageParts.length > 0) {
+    if (
+      (imageParts !== undefined && imageParts.length > 0) ||
+      bodyHasBoxQuestion(body)
+    ) {
       headers["TypeSafe-Danger-Zone-Images"] = "true";
     }
     if (options.apiKey !== undefined && options.apiKey !== "") {
