@@ -1,3 +1,5 @@
+import { type } from "arktype";
+
 import type { FallbackReason, FallbackResult } from "./schemas.js";
 
 const CLAIRIC_MODEL = "@cf/cloudflare/clairic";
@@ -10,7 +12,9 @@ export type NumberField = {
   unit?: string;
   instructions?: string;
 };
-export type ListField<Items extends string = string> = {
+export type ListItemKind = "text" | "number" | "date";
+
+export type ListField<Items extends ListItemKind = ListItemKind> = {
   type: "list";
   items: Items;
 };
@@ -39,7 +43,11 @@ export type DateAnswer = { value: string | null };
 
 export type NumberAnswer = { value: number | null; unit?: string };
 
-export type ListAnswer = { value: string[] | null };
+type ListValue<Items extends string> = Items extends "number" ? number : string;
+
+export type ListAnswer<Items extends string = "text"> = {
+  value: ListValue<Items>[] | null;
+};
 
 export type EstimateAnswer = {
   median: number | null;
@@ -52,8 +60,8 @@ type AnswerOf<Field> = Field extends { type: "text" }
     ? DateAnswer
     : Field extends { type: "number" }
       ? NumberAnswer
-      : Field extends { type: "list" }
-        ? ListAnswer
+      : Field extends { type: "list"; items: infer Items extends string }
+        ? ListAnswer<Items>
         : Field extends { type: "estimate" }
           ? EstimateAnswer
           : never;
@@ -121,7 +129,9 @@ function number(options?: {
   return field;
 }
 
-function list<const Items extends string>(items: Items): ListField<Items> {
+function list<const Items extends ListItemKind>(
+  items: Items,
+): ListField<Items> {
   return { type: "list", items };
 }
 
@@ -146,110 +156,262 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function numberOrUndefined(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value)
-    ? value
-    : undefined;
+type ParseError = { parseError: string };
+
+const finiteNumber = type("number").narrow((value) => Number.isFinite(value));
+
+const finiteOrNull = type("number | null").narrow(
+  (value) => value === null || Number.isFinite(value),
+);
+
+const TextWire = type({
+  "type?": "string",
+  "value?": "string | null",
+  "text?": "string | null",
+  "start?": finiteNumber,
+  "end?": finiteNumber,
+  "span?": [finiteNumber, finiteNumber],
+  "offsets?": {
+    "start?": finiteNumber,
+    "end?": finiteNumber,
+  },
+});
+
+const DateWire = type("string").or(
+  type({
+    "type?": "string",
+    "value?": "string | null",
+    "date?": "string | null",
+  }),
+);
+
+const NumberWire = finiteNumber.or(
+  type({
+    "type?": "string",
+    "value?": finiteOrNull,
+    "number?": finiteOrNull,
+    "unit?": "string",
+  }),
+);
+
+const stringItems = type("string[]").or("null");
+
+const numberItems = finiteNumber.array().or("null");
+
+const StringListWire = type("string[]").or(
+  type({
+    "type?": "string",
+    "value?": stringItems,
+    "items?": stringItems,
+  }),
+);
+
+const NumberListWire = finiteNumber.array().or(
+  type({
+    "type?": "string",
+    "value?": numberItems,
+    "items?": numberItems,
+  }),
+);
+
+const EstimateInterval = type([finiteNumber, finiteNumber]).or(
+  type({
+    "p10?": finiteNumber,
+    "low?": finiteNumber,
+    "p90?": finiteNumber,
+    "high?": finiteNumber,
+  }),
+);
+
+const EstimateWire = type({
+  "type?": "string",
+  "value?": finiteOrNull,
+  "median?": finiteOrNull,
+  "p10?": finiteNumber,
+  "p90?": finiteNumber,
+  "interval?": EstimateInterval,
+});
+
+function isParseError(value: unknown): value is ParseError {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "parseError" in value &&
+    typeof value.parseError === "string"
+  );
 }
 
-function textAnswer(raw: unknown): TextAnswer {
+function textAnswer(raw: unknown): TextAnswer | ParseError {
   if (typeof raw === "string") return { value: raw };
   if (raw === null || raw === undefined) return { value: null };
-  if (!isRecord(raw)) return { value: null };
-  const direct =
-    typeof raw["value"] === "string"
-      ? raw["value"]
-      : typeof raw["text"] === "string"
-        ? raw["text"]
+  const parsed = TextWire(raw);
+  if (parsed instanceof type.errors) return { parseError: parsed.summary };
+  const value =
+    typeof parsed.value === "string"
+      ? parsed.value
+      : typeof parsed.text === "string"
+        ? parsed.text
         : null;
-  const offsets = isRecord(raw["offsets"]) ? raw["offsets"] : undefined;
-  const start =
-    numberOrUndefined(raw["start"]) ??
-    (offsets !== undefined ? numberOrUndefined(offsets["start"]) : undefined);
-  const end =
-    numberOrUndefined(raw["end"]) ??
-    (offsets !== undefined ? numberOrUndefined(offsets["end"]) : undefined);
-  const answer: TextAnswer = { value: direct };
+  const start = parsed.start ?? parsed.span?.[0] ?? parsed.offsets?.start;
+  const end = parsed.end ?? parsed.span?.[1] ?? parsed.offsets?.end;
+  const answer: TextAnswer = { value };
   if (start !== undefined) answer.start = start;
   if (end !== undefined) answer.end = end;
   return answer;
 }
 
-function dateAnswer(raw: unknown): DateAnswer {
-  if (typeof raw === "string") return { value: raw };
+function dateAnswer(raw: unknown): DateAnswer | ParseError {
   if (raw === null || raw === undefined) return { value: null };
-  if (!isRecord(raw)) return { value: null };
-  const value = raw["value"] ?? raw["date"];
-  return { value: typeof value === "string" ? value : null };
+  const parsed = DateWire(raw);
+  if (parsed instanceof type.errors) return { parseError: parsed.summary };
+  if (typeof parsed === "string") return { value: parsed };
+  const value =
+    typeof parsed.value === "string"
+      ? parsed.value
+      : typeof parsed.date === "string"
+        ? parsed.date
+        : null;
+  return { value };
 }
 
-function numberAnswer(raw: unknown): NumberAnswer {
-  if (typeof raw === "number" && Number.isFinite(raw)) return { value: raw };
-  if (raw === null || raw === undefined || !isRecord(raw))
-    return { value: null };
-  const value = numberOrUndefined(raw["value"] ?? raw["number"]);
-  const unit = typeof raw["unit"] === "string" ? raw["unit"] : undefined;
-  const answer: NumberAnswer = { value: value ?? null };
-  if (unit !== undefined) answer.unit = unit;
+function numberAnswer(raw: unknown): NumberAnswer | ParseError {
+  if (raw === null || raw === undefined) return { value: null };
+  const parsed = NumberWire(raw);
+  if (parsed instanceof type.errors) return { parseError: parsed.summary };
+  if (typeof parsed === "number") return { value: parsed };
+  const value =
+    typeof parsed.value === "number"
+      ? parsed.value
+      : typeof parsed.number === "number"
+        ? parsed.number
+        : null;
+  const answer: NumberAnswer = { value };
+  if (parsed.unit !== undefined) answer.unit = parsed.unit;
   return answer;
 }
 
-function listAnswer(raw: unknown): ListAnswer {
-  if (Array.isArray(raw)) {
-    return {
-      value: raw.filter((item): item is string => typeof item === "string"),
-    };
-  }
-  if (raw === null || raw === undefined || !isRecord(raw))
-    return { value: null };
-  const value = raw["value"] ?? raw["items"];
-  if (value === null) return { value: null };
-  if (!Array.isArray(value)) return { value: null };
-  return {
-    value: value.filter((item): item is string => typeof item === "string"),
-  };
+function listValues(
+  parsed:
+    | { value?: string[] | number[] | null; items?: string[] | number[] | null }
+    | string[]
+    | number[],
+): string[] | number[] | null {
+  if (Array.isArray(parsed)) return parsed;
+  if (parsed.value !== undefined) return parsed.value;
+  return parsed.items ?? null;
 }
 
-function estimateAnswer(raw: unknown): EstimateAnswer {
-  if (raw === null || raw === undefined || !isRecord(raw)) {
-    return { median: null };
+function listAnswer(
+  items: ListItemKind,
+  raw: unknown,
+): ListAnswer<"text"> | ListAnswer<"number"> | ParseError {
+  if (raw === null || raw === undefined) return { value: null };
+  const parsed = (items === "number" ? NumberListWire : StringListWire)(raw);
+  if (parsed instanceof type.errors) return { parseError: parsed.summary };
+  const values = listValues(parsed);
+  if (values === null) return { value: null };
+  if (items === "number") {
+    if (!values.every((item) => typeof item === "number")) {
+      return { parseError: "list items must be numbers" };
+    }
+    return { value: values };
   }
-  const median = numberOrUndefined(raw["median"] ?? raw["value"]);
-  const intervalRaw = raw["interval"];
-  let interval: { p10: number; p90: number } | undefined;
-  if (Array.isArray(intervalRaw) && intervalRaw.length >= 2) {
-    const p10 = numberOrUndefined(intervalRaw[0]);
-    const p90 = numberOrUndefined(intervalRaw[1]);
-    if (p10 !== undefined && p90 !== undefined) interval = { p10, p90 };
-  } else if (isRecord(intervalRaw)) {
-    const p10 = numberOrUndefined(intervalRaw["p10"] ?? intervalRaw["low"]);
-    const p90 = numberOrUndefined(intervalRaw["p90"] ?? intervalRaw["high"]);
-    if (p10 !== undefined && p90 !== undefined) interval = { p10, p90 };
+  if (!values.every((item) => typeof item === "string")) {
+    return { parseError: "list items must be strings" };
   }
-  const answer: EstimateAnswer = { median: median ?? null };
+  return { value: values };
+}
+
+function isNumberPair(
+  value:
+    | readonly [number, number]
+    | { p10?: number; low?: number; p90?: number; high?: number },
+): value is readonly [number, number] {
+  return Array.isArray(value);
+}
+
+function estimateInterval(parsed: {
+  p10?: number;
+  p90?: number;
+  interval?:
+    | readonly [number, number]
+    | { p10?: number; low?: number; p90?: number; high?: number };
+}): { p10: number; p90: number } | undefined {
+  if (parsed.p10 !== undefined && parsed.p90 !== undefined) {
+    return { p10: parsed.p10, p90: parsed.p90 };
+  }
+  const interval = parsed.interval;
+  if (interval === undefined) return undefined;
+  if (isNumberPair(interval)) {
+    const low = interval[0];
+    const high = interval[1];
+    if (low === undefined || high === undefined) return undefined;
+    return { p10: low, p90: high };
+  }
+  const low = interval.p10 ?? interval.low;
+  const high = interval.p90 ?? interval.high;
+  if (low === undefined || high === undefined) return undefined;
+  return { p10: low, p90: high };
+}
+
+function estimateAnswer(raw: unknown): EstimateAnswer | ParseError {
+  if (raw === null || raw === undefined) return { median: null };
+  const parsed = EstimateWire(raw);
+  if (parsed instanceof type.errors) return { parseError: parsed.summary };
+  const median = parsed.median ?? parsed.value ?? null;
+  const answer: EstimateAnswer = { median };
+  const interval = estimateInterval(parsed);
   if (interval !== undefined) answer.interval = interval;
   return answer;
 }
 
-function mapAnswer(field: ExtractionField, raw: unknown): unknown {
+function mapAnswer(
+  field: ExtractionField,
+  raw: unknown,
+):
+  | TextAnswer
+  | DateAnswer
+  | NumberAnswer
+  | ListAnswer<"text">
+  | ListAnswer<"number">
+  | EstimateAnswer
+  | ParseError {
   if (field.type === "text") return textAnswer(raw);
   if (field.type === "date") return dateAnswer(raw);
   if (field.type === "number") return numberAnswer(raw);
-  if (field.type === "list") return listAnswer(raw);
+  if (field.type === "list") return listAnswer(field.items, raw);
   return estimateAnswer(raw);
 }
 
-function answersOf(
-  fields: Record<string, ExtractionField>,
+function isExtractionAnswers<Fields extends Record<string, ExtractionField>>(
+  fields: Fields,
+  answers: Record<string, unknown>,
+): answers is ExtractionAnswers<Fields> {
+  return Object.keys(fields).every((key) => Object.hasOwn(answers, key));
+}
+
+function answersOf<Fields extends Record<string, ExtractionField>>(
+  fields: Fields,
   raw: unknown,
-): Record<string, unknown> | undefined {
+): ExtractionAnswers<Fields> | ParseError {
   const envelope =
     isRecord(raw) && isRecord(raw["result"]) ? raw["result"] : raw;
-  if (!isRecord(envelope) || !isRecord(envelope["answers"])) return undefined;
+  if (!isRecord(envelope) || !isRecord(envelope["answers"])) {
+    return { parseError: "response has no answers" };
+  }
   const source = envelope["answers"];
   const answers: Record<string, unknown> = {};
   for (const [name, field] of Object.entries(fields)) {
-    answers[name] = mapAnswer(field, source[name]);
+    const parsed = mapAnswer(field, source[name]);
+    if (isParseError(parsed)) {
+      return {
+        parseError: `answer "${name}" failed schema validation: ${parsed.parseError}`,
+      };
+    }
+    answers[name] = parsed;
+  }
+  if (!isExtractionAnswers(fields, answers)) {
+    return { parseError: "response has no answers" };
   }
   return answers;
 }
@@ -331,15 +493,15 @@ export async function extract<
   }
 
   const answers = answersOf(input.fields, body);
-  if (answers === undefined) {
+  if (isParseError(answers)) {
     return fallback("parse-error", started, {
-      detail: "response has no answers",
+      detail: answers.parseError.slice(0, 240),
     });
   }
 
   return {
     fallback: false,
-    answers: answers as ExtractionAnswers<Fields>,
+    answers,
     modelId: "clairic",
     latencyMs: Math.max(0, Date.now() - started),
   };
