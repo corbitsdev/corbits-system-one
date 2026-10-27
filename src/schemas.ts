@@ -332,6 +332,12 @@ export function boxEdgesOutOfRange(
       return `answer "${id}" box.${edge} ${String(value)} outside [0, 1]`;
     }
   }
+  if (box.top >= box.bottom) {
+    return `answer "${id}" box.top ${String(box.top)} is not below box.bottom ${String(box.bottom)}`;
+  }
+  if (box.left >= box.right) {
+    return `answer "${id}" box.left ${String(box.left)} is not left of box.right ${String(box.right)}`;
+  }
   return undefined;
 }
 

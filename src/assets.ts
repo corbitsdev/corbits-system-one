@@ -224,7 +224,7 @@ export function serializeRequest(
 
 const IDENT = /[0-9A-Za-z_]/;
 
-/** True when `name` is its own token in a JSON string value, not a key or a substring. */
+/** True when `name` is its own token in state, instructions, or criteria. */
 function jsonValueHasToken(json: string, name: string): boolean {
   let parsed: unknown;
   try {
@@ -232,7 +232,26 @@ function jsonValueHasToken(json: string, name: string): boolean {
   } catch {
     return false;
   }
-  return valueHasToken(parsed, name);
+  return requestReferencesName(parsed, name);
+}
+
+function own(value: object, key: string): unknown {
+  if (!Object.hasOwn(value, key)) return undefined;
+  return Object.getOwnPropertyDescriptor(value, key)?.value;
+}
+
+/** Question `type` and other fields are not references. Keys are not either. */
+function requestReferencesName(payload: unknown, name: string): boolean {
+  if (typeof payload !== "object" || payload === null) return false;
+  if (valueHasToken(own(payload, "state"), name)) return true;
+  const questions = own(payload, "questions");
+  if (typeof questions !== "object" || questions === null) return false;
+  for (const question of Object.values(questions)) {
+    if (typeof question !== "object" || question === null) continue;
+    if (valueHasToken(own(question, "instructions"), name)) return true;
+    if (valueHasToken(own(question, "criteria"), name)) return true;
+  }
+  return false;
 }
 
 function valueHasToken(value: unknown, name: string): boolean {
@@ -247,12 +266,16 @@ function valueHasToken(value: unknown, name: string): boolean {
 
 function hasToken(text: string, name: string): boolean {
   if (name.length === 0) return false;
+  // `<image:hex>` is one generated reference, not a use of an asset named `image`.
+  const visible = text.replace(/<image:[0-9a-f]{32}>/g, (reference) =>
+    " ".repeat(reference.length),
+  );
   let from = 0;
-  while (from <= text.length) {
-    const at = text.indexOf(name, from);
+  while (from <= visible.length) {
+    const at = visible.indexOf(name, from);
     if (at < 0) return false;
-    const before = at === 0 ? "" : (text[at - 1] ?? "");
-    const after = text[at + name.length] ?? "";
+    const before = at === 0 ? "" : (visible[at - 1] ?? "");
+    const after = visible[at + name.length] ?? "";
     if (!IDENT.test(before) && !IDENT.test(after)) return true;
     from = at + 1;
   }

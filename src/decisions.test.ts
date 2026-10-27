@@ -292,6 +292,200 @@ describe("systemOne", () => {
       ),
     ).rejects.toBeInstanceOf(SystemOneError);
   });
+
+  test("asset names match only state, instructions, and criteria", async () => {
+    let fetched = false;
+    const transport = deps(async () => {
+      fetched = true;
+      return new Response("{}", { status: 200 });
+    });
+    const unreferenced: {
+      state: unknown;
+      questions: Record<string, unknown>;
+      assets: Record<string, Image>;
+    }[] = [
+      {
+        state: "plain",
+        questions: { q: choice("look", { a: null }) },
+        assets: { choice: image(png) },
+      },
+      {
+        state: "plain",
+        questions: { q: noul("look") },
+        assets: { noul: image(png) },
+      },
+      {
+        state: "plain",
+        questions: { q: score("look", ["none", "some"]) },
+        assets: { score: image(png) },
+      },
+      {
+        state: "plain",
+        questions: { q: box("the region") },
+        assets: { box: image(png) },
+      },
+      {
+        state: { shot: image(png) },
+        questions: { q: noul("look") },
+        assets: { image: image(jpeg) },
+      },
+      {
+        state: { photo: "x" },
+        questions: { q: noul("look") },
+        assets: { photo: image(png) },
+      },
+      {
+        state: { "a3f1c2e8-found": "x" },
+        questions: { q: noul("look") },
+        assets: { found: image(png) },
+      },
+      {
+        state: "photograph",
+        questions: { q: noul("look") },
+        assets: { photo: image(png) },
+      },
+      {
+        state: "plain",
+        questions: { q: choice("look", { photo: null }) },
+        assets: { photo: image(png) },
+      },
+    ];
+    for (const input of unreferenced) {
+      await expect(
+        systemOne(
+          { ...input, config: { apiKey: "test-key" } },
+          { deps: transport },
+        ),
+      ).rejects.toThrow(/not referenced/);
+    }
+    expect(fetched).toBe(false);
+
+    const photo = image(png);
+    const named = await systemOne(
+      {
+        state: withAssets`see image ${photo}`,
+        questions: { q: noul("use choice") },
+        assets: { image: image(jpeg), choice: image(png) },
+        config: { apiKey: "test-key" },
+      },
+      {
+        deps: deps(async () =>
+          Promise.resolve(
+            new Response(
+              JSON.stringify({ answers: { q: { type: "noul", noul: 0.2 } } }),
+              { status: 200 },
+            ),
+          ),
+        ),
+      },
+    );
+    if (named.fallback) throw new Error(named.reason);
+    expect(named.answers.q.noul).toBe(0.2);
+  });
+
+  test("sends the images header for a box question with no upload", async () => {
+    const seen = { header: "", contentType: "" };
+    const result = await systemOne(
+      {
+        state: "a form",
+        questions: { region: box("the signature") },
+        config: { apiKey: "test-key" },
+      },
+      {
+        deps: deps(async (_url, init) => {
+          const headers = new Headers(init?.headers);
+          seen.header = headers.get("TypeSafe-Danger-Zone-Images") ?? "";
+          seen.contentType = headers.get("content-type") ?? "";
+          return new Response(
+            JSON.stringify({
+              answers: {
+                region: {
+                  type: "box",
+                  box: { top: 0.1, bottom: 0.4, left: 0.2, right: 0.5 },
+                  confidence: 0.4,
+                },
+              },
+            }),
+            { status: 200 },
+          );
+        }),
+      },
+    );
+    expect(seen.header).toBe("true");
+    expect(seen.contentType).toBe("application/json");
+    if (result.fallback) throw new Error(result.detail ?? result.reason);
+
+    const choiceSeen = { header: "unset" };
+    await systemOne(
+      {
+        state: "plain",
+        questions: { category: choice("What?", { a: null }) },
+        config: { apiKey: "test-key" },
+      },
+      {
+        deps: deps(async (_url, init) => {
+          choiceSeen.header =
+            new Headers(init?.headers).get("TypeSafe-Danger-Zone-Images") ?? "";
+          return new Response(
+            JSON.stringify({
+              answers: {
+                category: {
+                  type: "choice",
+                  choice: "a",
+                  probabilities: { a: 1 },
+                  confidence: 0.5,
+                },
+              },
+            }),
+            { status: 200 },
+          );
+        }),
+      },
+    );
+    expect(choiceSeen.header).toBe("");
+  });
+
+  test("rejects an inverted box instead of returning a decision", async () => {
+    const ask = (edges: {
+      top: number;
+      bottom: number;
+      left: number;
+      right: number;
+    }) =>
+      systemOne(
+        {
+          state: "a form",
+          questions: { region: box("the signature") },
+          config: { apiKey: "test-key" },
+        },
+        {
+          deps: deps(async () =>
+            Promise.resolve(
+              new Response(
+                JSON.stringify({
+                  answers: {
+                    region: { type: "box", box: edges, confidence: 0.5 },
+                  },
+                }),
+                { status: 200 },
+              ),
+            ),
+          ),
+        },
+      );
+    for (const edges of [
+      { top: 0.8, bottom: 0.1, left: 0.2, right: 0.5 },
+      { top: 0.4, bottom: 0.4, left: 0.2, right: 0.5 },
+      { top: 0.1, bottom: 0.4, left: 0.9, right: 0.2 },
+      { top: 0.1, bottom: 0.4, left: 0.5, right: 0.5 },
+      { top: -0.1, bottom: 0.4, left: 0.2, right: 0.5 },
+    ]) {
+      const result = await ask(edges);
+      expect(result.fallback).toBe(true);
+      if (!result.fallback) throw new Error("expected fallback");
+      expect(result.reason).toBe("parse-error");
+    }
+  });
 });
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47];

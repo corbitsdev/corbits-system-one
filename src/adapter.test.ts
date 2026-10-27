@@ -222,4 +222,33 @@ describe("adapter factory", () => {
       ),
     ).toThrow(/outside \[0, 1\]/);
   });
+
+  test("parseJSONResponse rejects an inverted box", () => {
+    const adapter = createSystemOneAdapter();
+    const reject = (box: {
+      top: number;
+      bottom: number;
+      left: number;
+      right: number;
+    }) =>
+      adapter.parseJSONResponse(
+        JSON.stringify({
+          answers: {
+            region: { type: "box", box, confidence: null },
+          },
+        }),
+      );
+    expect(() =>
+      reject({ top: 0.8, bottom: 0.1, left: 0.2, right: 0.5 }),
+    ).toThrow(/not below/);
+    expect(() =>
+      reject({ top: 0.2, bottom: 0.2, left: 0.1, right: 0.4 }),
+    ).toThrow(/not below/);
+    expect(() =>
+      reject({ top: 0.1, bottom: 0.4, left: 0.9, right: 0.2 }),
+    ).toThrow(/not left of/);
+    expect(() =>
+      reject({ top: 0.1, bottom: 0.4, left: 0.5, right: 0.5 }),
+    ).toThrow(/not left of/);
+  });
 });

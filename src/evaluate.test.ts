@@ -305,3 +305,75 @@ describe("key material", () => {
     expect(JSON.stringify(events)).not.toContain(secret);
   });
 });
+
+describe("box answers", () => {
+  const boxQuestion: Question[] = [
+    { id: "region", type: "box", instructions: "the signature" },
+  ];
+
+  function boxDeps(
+    box: { top: number; bottom: number; left: number; right: number },
+    seen?: { header: string | null; contentType: string | null },
+  ): EvaluateDeps {
+    return {
+      fetch: (_url, init) => {
+        if (seen !== undefined) {
+          const headers = new Headers(init?.headers);
+          seen.header = headers.get("TypeSafe-Danger-Zone-Images");
+          seen.contentType = headers.get("content-type");
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              answers: { region: { type: "box", box, confidence: 0.4 } },
+            }),
+            { status: 200 },
+          ),
+        );
+      },
+      scheduler: createDefaultScheduler(),
+    };
+  }
+
+  test("an inverted box is a parse fallback, not a decision", async () => {
+    for (const box of [
+      { top: 0.8, bottom: 0.1, left: 0.2, right: 0.5 },
+      { top: 0.4, bottom: 0.4, left: 0.1, right: 0.4 },
+      { top: 0.1, bottom: 0.4, left: 0.9, right: 0.2 },
+      { top: 0.1, bottom: 0.4, left: 0.5, right: 0.5 },
+    ]) {
+      const result = await evaluate(
+        { state: "form", questions: boxQuestion, config: { apiKey: "key" } },
+        { deps: boxDeps(box) },
+      );
+      expect(result.fallback).toBe(true);
+      if (!result.fallback) throw new Error("expected fallback");
+      expect(result.reason).toBe("parse-error");
+    }
+    const outside = await evaluate(
+      { state: "form", questions: boxQuestion, config: { apiKey: "key" } },
+      {
+        deps: boxDeps({ top: -0.1, bottom: 0.4, left: 0.2, right: 0.5 }),
+      },
+    );
+    expect(outside).toMatchObject({ fallback: true, reason: "parse-error" });
+    if (!outside.fallback) throw new Error("expected fallback");
+    expect(outside.detail).toContain("outside [0, 1]");
+  });
+
+  test("a box question with no image parts still opens the images gate", async () => {
+    const seen = {
+      header: null as string | null,
+      contentType: null as string | null,
+    };
+    const result = await evaluate(
+      { state: "form", questions: boxQuestion, config: { apiKey: "key" } },
+      {
+        deps: boxDeps({ top: 0.1, bottom: 0.4, left: 0.2, right: 0.5 }, seen),
+      },
+    );
+    expect(seen.header).toBe("true");
+    expect(seen.contentType).toBe("application/json");
+    expect(result.fallback).toBe(false);
+  });
+});
