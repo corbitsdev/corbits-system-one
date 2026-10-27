@@ -23,6 +23,7 @@ import {
   toWireQuestions,
   WireRequest,
   WireResponseBody,
+  boxEdgesOutOfRange,
   type Decision,
   type EvaluateResult,
   type FallbackReason,
@@ -120,7 +121,11 @@ function checkAnswer(
     if (answer.noul === undefined) return `answer "${id}" is missing noul`;
     return undefined;
   }
-  if (answer.confidence === undefined) {
+  if (question.type === "box" && answer.type === "box") {
+    if (answer.box === undefined) return `answer "${id}" is missing box`;
+    return boxEdgesOutOfRange(id, answer.box);
+  }
+  if (answer.confidence == null) {
     return `answer "${id}" is missing confidence`;
   }
   if (question.type === "choice" && answer.type === "choice") {
@@ -225,6 +230,15 @@ function envKey(name: string): string | undefined {
 export type EvaluateOptions = {
   onTelemetry?: (event: SystemOneTelemetryEvent) => void;
   deps?: EvaluateDeps;
+  /** Image parts already checked as PNG or JPEG. Omitted for JSON requests. */
+  images?: {
+    assets: Record<string, { type: "image"; part: string }>;
+    parts: {
+      name: string;
+      bytes: Uint8Array;
+      contentType: "image/png" | "image/jpeg";
+    }[];
+  };
 };
 
 /**
@@ -236,6 +250,9 @@ export type EvaluateOptions = {
  * `TYPESAFE_API_KEY` for official, `AI_GATEWAY_API_KEY` then
  * `VERCEL_OIDC_TOKEN` for gateway — then the `SYSTEM_ONE_API_KEY` alias,
  * then a fail-closed `'no-key'` fallback with zero fetch calls.
+ * A custom endpoint with `auth: "none"` skips that check and sends no
+ * `Authorization` header, even if a key is present. Official and gateway
+ * always require a key; a custom endpoint without `auth: "none"` does too.
  * A `timeoutMs` that is not a finite number >= 0 falls back to
  * `DEFAULT_TIMEOUT_MS`. Transport failures map to matching fallback reasons
  * (`'timeout'`, `'network'`, `'http-error'`, or `'parse-error'` for a 2xx
@@ -282,7 +299,11 @@ export async function evaluate(
   const rawApiKey = parsed.config?.apiKey;
   let apiKey: string | undefined;
   let keySources: string;
-  if (rawApiKey !== undefined && rawApiKey !== "") {
+  const keyless = endpoint.auth === "none";
+  if (keyless) {
+    apiKey = undefined;
+    keySources = "";
+  } else if (rawApiKey !== undefined && rawApiKey !== "") {
     apiKey = rawApiKey;
     keySources = "config.apiKey";
   } else if (endpoint.backend === "corbits-system-one") {
@@ -332,16 +353,20 @@ export async function evaluate(
   };
   emit(startEvent);
 
-  if (apiKey === undefined || apiKey === "") {
+  if (!keyless && (apiKey === undefined || apiKey === "")) {
     return fallback("no-key", {
       detail: `no API key supplied; set config.apiKey or ${keySources}`,
     });
   }
 
+  const images = options?.images;
   const wire = WireRequest({
     model,
     state: parsed.state,
     questions: toWireQuestions(parsed.questions),
+    ...(images !== undefined && images.parts.length > 0
+      ? { assets: images.assets }
+      : {}),
   });
   if (wire instanceof type.errors) {
     throw new SystemOneError(
@@ -356,7 +381,13 @@ export async function evaluate(
     const response = await postEvaluate(
       endpoint.url,
       wire,
-      { timeoutMs, apiKey },
+      {
+        timeoutMs,
+        ...(apiKey === undefined ? {} : { apiKey }),
+        ...(images !== undefined && images.parts.length > 0
+          ? { imageParts: images.parts }
+          : {}),
+      },
       deps,
     );
     data = response.data;

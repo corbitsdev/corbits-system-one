@@ -2,6 +2,9 @@ export { DEFAULT_TIMEOUT_MS } from "./config.js";
 export type { EvaluateDeps } from "./client.js";
 export { evaluate } from "./evaluate.js";
 export type { EvaluateOptions } from "./evaluate.js";
+export { choice, noul, score, box, systemOne } from "./decisions.js";
+export type { SystemOneResult, SystemOneSuccess } from "./decisions.js";
+export { Image, image, withAssets } from "./assets.js";
 export {
   createSystemOneAdapter,
   createSystemOneAdapterFactory,
@@ -14,6 +17,8 @@ export {
   BooleanQuestion,
   ChoiceQuestion,
   Decision,
+  DecisionQuestion,
+  DecisionQuestionRecord,
   Description,
   EndpointConfig,
   EvaluateConfig,

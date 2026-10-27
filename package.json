@@ -1,6 +1,6 @@
 {
   "name": "@corbits/system-one",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Typed-decision evaluation client for System One (Jev-class) models: arktype question/decision schemas, endpoint configuration with gateway override, and timeout/fallback semantics.",
   "keywords": [
     "corbits",
@@ -32,6 +32,16 @@
       "corbits-system-one-src": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./decisions": {
+      "corbits-system-one-src": "./src/decisions.ts",
+      "types": "./dist/decisions.d.ts",
+      "default": "./dist/decisions.js"
+    },
+    "./extraction": {
+      "corbits-system-one-src": "./src/extraction.ts",
+      "types": "./dist/extraction.d.ts",
+      "default": "./dist/extraction.js"
     }
   },
   "publishConfig": {

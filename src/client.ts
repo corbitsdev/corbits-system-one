@@ -23,6 +23,11 @@ import { SystemOneError, TransportError } from "./errors.js";
 export type PostEvaluateOptions = {
   timeoutMs?: number;
   apiKey?: string;
+  imageParts?: {
+    name: string;
+    bytes: Uint8Array;
+    contentType: "image/png" | "image/jpeg";
+  }[];
 };
 
 /** Transport dependencies: the `fetch` to POST with and the timeout scheduler. */
@@ -34,6 +39,73 @@ export type PostEvaluateResponse = {
   latencyMs: number;
   httpStatus: number;
 };
+
+function bodyHasBoxQuestion(body: unknown): boolean {
+  if (typeof body !== "object" || body === null) return false;
+  if (!Object.hasOwn(body, "questions")) return false;
+  const questions = Object.getOwnPropertyDescriptor(body, "questions")?.value;
+  if (typeof questions !== "object" || questions === null) return false;
+  return Object.values(questions).some((question) => {
+    if (typeof question !== "object" || question === null) return false;
+    if (!Object.hasOwn(question, "type")) return false;
+    return Object.getOwnPropertyDescriptor(question, "type")?.value === "box";
+  });
+}
+
+function encodeMultipart(
+  payload: unknown,
+  parts: NonNullable<PostEvaluateOptions["imageParts"]>,
+): { body: Uint8Array; contentType: string } {
+  const boundary = Array.from(
+    crypto.getRandomValues(new Uint8Array(16)),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
+  const encoder = new TextEncoder();
+  const chunks: Uint8Array[] = [];
+  const fields: {
+    name: string;
+    contentType: string;
+    content: Uint8Array;
+    filename?: string;
+  }[] = [
+    {
+      name: "request",
+      contentType: "application/json",
+      content: encoder.encode(JSON.stringify(payload)),
+    },
+    ...parts.map((part) => ({
+      name: part.name,
+      contentType: part.contentType,
+      content: part.bytes,
+      filename: part.name,
+    })),
+  ];
+  for (const field of fields) {
+    const disposition =
+      field.filename === undefined
+        ? `name="${field.name}"`
+        : `name="${field.name}"; filename="${field.filename}"`;
+    chunks.push(
+      encoder.encode(
+        `--${boundary}\r\nContent-Disposition: form-data; ${disposition}\r\nContent-Type: ${field.contentType}\r\n\r\n`,
+      ),
+      field.content,
+      encoder.encode("\r\n"),
+    );
+  }
+  chunks.push(encoder.encode(`--${boundary}--\r\n`));
+  const size = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return {
+    body,
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  };
+}
 
 /**
  * POSTs an evaluation payload and returns the decoded JSON body. Sends
@@ -52,9 +124,17 @@ export async function postEvaluate(
   options: PostEvaluateOptions,
   deps: EvaluateDeps,
 ): Promise<PostEvaluateResponse> {
-  let serialized: string;
+  let serialized: string | Uint8Array;
+  const imageParts = options.imageParts;
+  let contentType = "application/json";
   try {
-    serialized = JSON.stringify(body);
+    if (imageParts !== undefined && imageParts.length > 0) {
+      const encoded = encodeMultipart(body, imageParts);
+      serialized = encoded.body;
+      contentType = encoded.contentType;
+    } else {
+      serialized = JSON.stringify(body);
+    }
   } catch {
     throw new SystemOneError(
       "parse-error",
@@ -81,9 +161,15 @@ export async function postEvaluate(
   };
   try {
     const headers: Record<string, string> = {
-      "content-type": "application/json",
+      "content-type": contentType,
       accept: "application/json",
     };
+    if (
+      (imageParts !== undefined && imageParts.length > 0) ||
+      bodyHasBoxQuestion(body)
+    ) {
+      headers["TypeSafe-Danger-Zone-Images"] = "true";
+    }
     if (options.apiKey !== undefined && options.apiKey !== "") {
       headers["authorization"] = `Bearer ${options.apiKey}`;
     }

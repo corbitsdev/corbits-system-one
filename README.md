@@ -70,6 +70,10 @@ Boolean questions answer as `noul`, a probability from 0 to 1 that the answer is
 | Export                            | Description                                                                         |
 | --------------------------------- | ----------------------------------------------------------------------------------- |
 | `evaluate(input, options?)`       | Runs one evaluation. Returns `EvaluateResult`: decisions or a `FallbackResult`.     |
+| `systemOne(input, options?)`      | Keyed decisions. Returns `answers` by question name, or the same fallback.          |
+| `choice`, `noul`, `score`, `box`  | Build one keyed question. `box` locates a region and needs model `jev-preview`.     |
+| `image`, `Image.fromBase64`       | PNG or JPEG bytes, a `Blob`, or base64. Other formats are rejected before send.     |
+| `withAssets`                      | Tag a template so interpolated images are sent. Also `withAssets.join`.             |
 | `createSystemOneAdapter(config?)` | Returns a `ProviderAdapter` for `runInference`. `config` is an `EvaluateConfig`.    |
 | `createSystemOneAdapterFactory`   | Interchange `AdapterFactory` for `SIDECAR_ADAPTER_MANIFEST`; takes offering quirks. |
 | `SYSTEM_ONE_PROVIDER`             | The `"corbits-system-one"` provider id.                                             |
@@ -82,24 +86,59 @@ Boolean questions answer as `noul`, a probability from 0 to 1 that the answer is
 
 ### Questions
 
-| `type`    | Fields                                                                          | Decision fields                                  |
-| --------- | ------------------------------------------------------------------------------- | ------------------------------------------------ |
-| `choice`  | `instructions`, `criteria` (option name → description or `null`, 1–255 options) | `choice`, `probabilities`, `confidence`          |
-| `score`   | `instructions`, `criteria` (2–10 descriptions)                                  | `score`, `legend`, `probabilities`, `confidence` |
-| `boolean` | `instructions`, optional `criteria: { true?, false? }`                          | `noul`                                           |
-| `noul`    | Same as `boolean`                                                               | `noul`                                           |
+| `type`    | Fields                                                                          | Decision fields                                                     |
+| --------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `choice`  | `instructions`, `criteria` (option name → description or `null`, 1–255 options) | `choice`, `probabilities`, `confidence`                             |
+| `score`   | `instructions`, `criteria` (2–10 descriptions)                                  | `score`, `legend`, `probabilities`, `confidence`                    |
+| `boolean` | `instructions`, optional `criteria: { true?, false? }`                          | `noul`                                                              |
+| `noul`    | Same as `boolean`                                                               | `noul`                                                              |
+| `box`     | `instructions` describing what to locate. Use model `jev-preview`.              | `box` (`top`, `bottom`, `left`, `right` as fractions), `confidence` |
 
-Every question has an `id`, unique within the list.
+Every list question has an `id`, unique within the list. `box` edges outside `[0, 1]` are rejected.
+
+### Keyed questions
+
+`systemOne` takes the same state and a record of questions built with `choice`, `noul`, `score`, and `box`. The names are the answer keys. Those helpers compile to the list `evaluate` already sends. The same fallback reasons apply, and those failures do not throw. The helpers are also exported from `@corbits/system-one/decisions`.
+
+```ts
+import { choice, noul, score, systemOne } from "@corbits/system-one";
+
+const result = await systemOne({
+  state: { document: "I was charged twice." },
+  questions: {
+    category: choice("What is this?", { billing: null, technical: null }),
+    escalate: noul("Must this be escalated?"),
+    severity: score("How severe?", ["none", "cosmetic", "unusable"]),
+  },
+});
+```
+
+On success, read `result.answers.category.choice` (plus `probabilities` and `confidence`), `result.answers.escalate.noul`, and `result.answers.severity.score`.
+
+`image()` accepts a `Blob` or `Uint8Array`. `Image.fromBase64()` accepts base64 file bytes. Only PNG and JPEG are sent. Place an image in `state`, instructions, or criteria, or interpolate it with `withAssets` (and `withAssets.join` for a list). An image in an ordinary template string is rejected before the request. `assets` maps a name to an image for plain strings; every name must appear as its own token in the request. A request with any image is `multipart/form-data` and sends `TypeSafe-Danger-Zone-Images: true`. Otherwise the body stays JSON.
+
+```ts
+import { box, image, systemOne, withAssets } from "@corbits/system-one";
+
+const photo = image(pngBytes);
+const result = await systemOne({
+  state: withAssets`Returned item: ${photo}`,
+  questions: { damage: box("The damaged area") },
+  model: "jev-preview",
+});
+```
+
+`providerOptions.systemOne.questions` accepts this keyed record as well as a question list.
 
 ### Config
 
 `input.config` for `evaluate`, or the argument to `createSystemOneAdapter`:
 
-| Field       | Type             | Default                | Description                                                                      |
-| ----------- | ---------------- | ---------------------- | -------------------------------------------------------------------------------- |
-| `endpoint`  | `EndpointConfig` | `{ kind: "official" }` | `official`, `gateway`, or `custom` with a `url`. Each takes an optional `model`. |
-| `timeoutMs` | `number`         | `1500`                 | Bound for the whole round trip.                                                  |
-| `apiKey`    | `string`         | from the environment   | Overrides the environment key.                                                   |
+| Field       | Type             | Default                | Description                                                                                                       |
+| ----------- | ---------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `endpoint`  | `EndpointConfig` | `{ kind: "official" }` | `official`, `gateway`, or `custom` with a `url`. Each takes an optional `model`. `custom` may set `auth: "none"`. |
+| `timeoutMs` | `number`         | `1500`                 | Bound for the whole round trip.                                                                                   |
+| `apiKey`    | `string`         | from the environment   | Overrides the environment key.                                                                                    |
 
 ### Endpoints and keys
 
@@ -107,19 +146,20 @@ Every question has an `id`, unique within the list.
 | ---------- | ---------------------------------------------------- | ----------------- | ---------------------------------------------- |
 | `official` | `https://api.typesafe.ai/v1/systemone`               | `jev-latest`      | `TYPESAFE_API_KEY`                             |
 | `gateway`  | `https://ai-gateway.vercel.sh/typesafe/v1/systemone` | `typesafe-ai/jev` | `AI_GATEWAY_API_KEY`, then `VERCEL_OIDC_TOKEN` |
-| `custom`   | `url`                                                | `typesafe-ai/jev` | `SYSTEM_ONE_API_KEY`                           |
+| `custom`   | `url`                                                | `typesafe-ai/jev` | `SYSTEM_ONE_API_KEY`, unless `auth: "none"`    |
 
 `SYSTEM_ONE_API_KEY` is also a supported alias on every endpoint, read after the endpoint's own key.
+A custom endpoint with `auth: "none"` does not require a key and does not send `Authorization`. Official and gateway always require a key. Any other `auth` value is invalid input and throws.
 
 ### Fallback reasons
 
-| `reason`      | When                                                          |
-| ------------- | ------------------------------------------------------------- |
-| `no-key`      | No key in `apiKey` or the environment. No request is sent.    |
-| `timeout`     | The round trip, including the body read, exceeds `timeoutMs`. |
-| `network`     | The request fails before a response.                          |
-| `http-error`  | Non-2xx response. `httpStatus` holds the status.              |
-| `parse-error` | The body is not JSON or fails validation.                     |
+| `reason`      | When                                                                                                           |
+| ------------- | -------------------------------------------------------------------------------------------------------------- |
+| `no-key`      | No key in `apiKey` or the environment, and the endpoint is not custom with `auth: "none"`. No request is sent. |
+| `timeout`     | The round trip, including the body read, exceeds `timeoutMs`.                                                  |
+| `network`     | The request fails before a response.                                                                           |
+| `http-error`  | Non-2xx response. `httpStatus` holds the status.                                                               |
+| `parse-error` | The body is not JSON or fails validation.                                                                      |
 
 `detail` carries the underlying message.
 
@@ -208,7 +248,7 @@ The hub offering's `quirks` are validated and all optional:
 }
 ```
 
-Without `endpoint`, the adapter posts to the catalog provider's `baseURL` + `/systemone`, the host the offering's credential was issued for. A `model` quirk (top level or on `endpoint`) is the model sent on the wire, so one catalog model can be served by providers that name it differently. `questions` and `state` are per-call defaults; `providerOptions.systemOne` on a call wins field by field. Unknown keys throw. The adapter sends the bearer sentinel and the harness injects the offering's credential.
+Without `endpoint`, the adapter posts to the catalog provider's `baseURL` + `/systemone`, the host the offering's credential was issued for. A `model` quirk (top level or on `endpoint`) is the model sent on the wire, so one catalog model can be served by providers that name it differently. `questions` and `state` are per-call defaults; `providerOptions.systemOne` on a call wins field by field. Unknown keys throw. The adapter sends the bearer sentinel and the harness injects the offering's credential, except a custom endpoint with `auth: "none"`, which omits `Authorization` so the host does not attach a key.
 
 | Provider          | Provider `baseURL`                         | `model` quirk                 |
 | ----------------- | ------------------------------------------ | ----------------------------- |
@@ -221,7 +261,7 @@ Without `endpoint`, the adapter posts to the catalog provider's `baseURL` + `/sy
 
 - `createSystemOneAdapterFactory` without an `endpoint` quirk now posts to the catalog provider's `baseURL` + `/systemone` instead of the official TypeSafe URL. Set the provider `baseURL` to the API root (for example `https://api.typesafe.ai/v1`), or keep the old behavior with `{"endpoint":{"kind":"official"}}`. The harness sends the offering's credential to whatever URL the adapter returns, so only set an explicit `endpoint` on a host that credential belongs to.
 - A `model` quirk now overrides the model the harness passes (the catalog canonical name).
-- `createSystemOneAdapter` and `evaluate` are unchanged.
+- `createSystemOneAdapter` and `evaluate` accept `auth: "none"` on a custom endpoint and omit `Authorization`. Any other `auth` value throws `SystemOneError` before a request is built.
 
 ## Upgrading from 0.1
 

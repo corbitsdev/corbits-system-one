@@ -9,6 +9,7 @@ import {
   createSystemOneAdapter,
   createSystemOneAdapterFactory,
 } from "./adapter";
+import { SystemOneError } from "./errors";
 
 describe("adapter", () => {
   function turns(): ConversationTurn[] {
@@ -122,6 +123,54 @@ describe("adapter factory", () => {
     { role: "user", timestamp: 0, content: [{ type: "text", text: "Hi" }] },
   ];
 
+  test("buildRequest omits Authorization for custom auth none and keeps the sentinel otherwise", () => {
+    const turns = (): ConversationTurn[] => [
+      { role: "user", timestamp: 0, content: [{ type: "text", text: "Hi" }] },
+    ];
+    const keyless = createSystemOneAdapter({
+      endpoint: {
+        kind: "custom",
+        url: "https://local.test/eval",
+        auth: "none",
+      },
+    }).buildRequest(turns(), "jev-latest", {});
+    expect(keyless.headers["authorization"]).toBeUndefined();
+    expect(Object.keys(keyless.headers)).not.toContain("authorization");
+
+    const official = createSystemOneAdapter({
+      endpoint: { kind: "official" },
+    }).buildRequest(turns(), "jev-latest", {});
+    expect(official.headers["authorization"]).toBe(BEARER_CREDENTIAL_SENTINEL);
+
+    const gateway = createSystemOneAdapter({
+      endpoint: { kind: "gateway" },
+    }).buildRequest(turns(), "jev-latest", {});
+    expect(gateway.headers["authorization"]).toBe(BEARER_CREDENTIAL_SENTINEL);
+
+    const keyedCustom = createSystemOneAdapter({
+      endpoint: { kind: "custom", url: "https://h.test/e" },
+    }).buildRequest(turns(), "jev-latest", {});
+    expect(keyedCustom.headers["authorization"]).toBe(
+      BEARER_CREDENTIAL_SENTINEL,
+    );
+  });
+
+  test("invalid auth throws before a request is built", () => {
+    let thrown: unknown;
+    try {
+      createSystemOneAdapter({
+        endpoint: {
+          kind: "custom",
+          url: "https://h.test/e",
+          auth: "bearer",
+        },
+      } as unknown as Parameters<typeof createSystemOneAdapter>[0]);
+    } catch (cause) {
+      thrown = cause;
+    }
+    expect(thrown).toBeInstanceOf(SystemOneError);
+  });
+
   test("no quirks routes to the provider baseURL with sentinel auth", () => {
     const request = createSystemOneAdapterFactory(source).buildRequest(
       turns(),
@@ -182,5 +231,73 @@ describe("adapter factory", () => {
     expect(() => createSystemOneAdapterFactory(source, { model: "" })).toThrow(
       /model must not be empty/,
     );
+  });
+
+  test("providerOptions.systemOne accepts keyed questions", () => {
+    const adapter = createSystemOneAdapter();
+    const request = adapter.buildRequest([], "jev-latest", {
+      providerOptions: {
+        systemOne: {
+          state: "ticket",
+          questions: {
+            category: {
+              type: "choice",
+              instructions: "What?",
+              criteria: { a: null },
+            },
+          },
+        },
+      },
+    });
+    const body = JSON.parse(request.body) as {
+      questions: Record<string, { type: string }>;
+    };
+    expect(body.questions["category"]?.type).toBe("choice");
+  });
+
+  test("parseJSONResponse rejects a box outside the image", () => {
+    const adapter = createSystemOneAdapter();
+    expect(() =>
+      adapter.parseJSONResponse(
+        JSON.stringify({
+          answers: {
+            region: {
+              type: "box",
+              box: { top: -0.1, bottom: 0.4, left: 0.2, right: 0.5 },
+              confidence: null,
+            },
+          },
+        }),
+      ),
+    ).toThrow(/outside \[0, 1\]/);
+  });
+
+  test("parseJSONResponse rejects an inverted box", () => {
+    const adapter = createSystemOneAdapter();
+    const reject = (box: {
+      top: number;
+      bottom: number;
+      left: number;
+      right: number;
+    }) =>
+      adapter.parseJSONResponse(
+        JSON.stringify({
+          answers: {
+            region: { type: "box", box, confidence: null },
+          },
+        }),
+      );
+    expect(() =>
+      reject({ top: 0.8, bottom: 0.1, left: 0.2, right: 0.5 }),
+    ).toThrow(/not below/);
+    expect(() =>
+      reject({ top: 0.2, bottom: 0.2, left: 0.1, right: 0.4 }),
+    ).toThrow(/not below/);
+    expect(() =>
+      reject({ top: 0.1, bottom: 0.4, left: 0.9, right: 0.2 }),
+    ).toThrow(/not left of/);
+    expect(() =>
+      reject({ top: 0.1, bottom: 0.4, left: 0.5, right: 0.5 }),
+    ).toThrow(/not left of/);
   });
 });

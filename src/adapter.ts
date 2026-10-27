@@ -17,15 +17,18 @@ import type {
 } from "@intx/types/runtime";
 
 import { resolveEndpoint } from "./config.js";
+import { SystemOneError } from "./errors.js";
 import {
   Decision,
+  DecisionQuestionRecord,
   toDecision,
   toWireQuestions,
   WireResponseBody,
+  boxEdgesOutOfRange,
   EndpointConfig,
+  EvaluateConfig,
   QuestionList,
   State,
-  type EvaluateConfig,
   type WireUsage,
 } from "./schemas.js";
 
@@ -51,9 +54,11 @@ export const SYSTEM_ONE_PROVIDER = "corbits-system-one";
 // `state` replaces the transcript-derived default; `questions` replaces the
 // single-question default. Both are validated, never cast — `QuestionList`
 // carries the same non-empty/unique-id contract as `EvaluateInput`.
+const QuestionsInput = QuestionList.or(DecisionQuestionRecord);
+
 const SystemOneProviderOptions = type({
   "state?": State,
-  "questions?": QuestionList,
+  "questions?": QuestionsInput,
   "+": "reject",
 });
 
@@ -84,6 +89,24 @@ const DEFAULT_QUESTIONS: QuestionList = [
     instructions: "Does this turn respond to the conversation?",
   },
 ];
+
+function asQuestionList(
+  questions: QuestionList | DecisionQuestionRecord,
+): QuestionList {
+  if (Array.isArray(questions)) return questions;
+  const compiled = Object.entries(questions).map(([id, question]) => ({
+    id,
+    ...question,
+  }));
+  const parsed = QuestionList(compiled);
+  if (parsed instanceof type.errors) {
+    throw new ProtocolMismatchError(
+      `${SYSTEM_ONE_PROVIDER} buildRequest: invalid providerOptions.systemOne questions: ${parsed.summary}`,
+      questions,
+    );
+  }
+  return parsed;
+}
 
 function transcriptText(turns: ConversationTurn[]): string {
   const texts: string[] = [];
@@ -142,6 +165,13 @@ function parseDecisions(
       );
     }
     try {
+      if (answer.type === "box") {
+        if (answer.box === undefined) {
+          throw new Error(`answer "${id}" is missing box`);
+        }
+        const violation = boxEdgesOutOfRange(id, answer.box);
+        if (violation !== undefined) throw new Error(violation);
+      }
       return toDecision(id, answer);
     } catch (cause) {
       throw new ProtocolMismatchError(
@@ -158,7 +188,9 @@ function parseDecisions(
  * host's single copy of `@intx/inference` (peer dependency, never vendored).
  * The optional `config` pins the endpoint (official by default, gateway, or
  * a custom URL) and the per-call model default; the inference call's own
- * `model` argument wins for the request body.
+ * `model` argument wins for the request body. Official and gateway requests
+ * carry `authorization: BEARER_CREDENTIAL_SENTINEL` so the host injects a
+ * key. A custom endpoint with `auth: "none"` omits that header.
  */
 function createSystemOneProviderAdapter(
   config?: EvaluateConfig,
@@ -187,14 +219,18 @@ function createSystemOneProviderAdapter(
         );
       }
       if (overrides.state !== undefined) state = overrides.state;
-      if (overrides.questions !== undefined) questions = overrides.questions;
+      if (overrides.questions !== undefined) {
+        questions = asQuestionList(overrides.questions);
+      }
     }
     const requestModel = model || endpoint.model;
     const headers: Record<string, string> = {
       "content-type": "application/json",
       accept: "application/json",
-      authorization: BEARER_CREDENTIAL_SENTINEL,
     };
+    if (endpoint.auth !== "none") {
+      headers["authorization"] = BEARER_CREDENTIAL_SENTINEL;
+    }
     return {
       url: endpoint.url,
       headers,
@@ -264,7 +300,15 @@ function createSystemOneProviderAdapter(
 export function createSystemOneAdapter(
   config?: EvaluateConfig,
 ): ProviderAdapter {
-  return createSystemOneProviderAdapter(config);
+  if (config === undefined) return createSystemOneProviderAdapter();
+  const parsed = EvaluateConfig(config);
+  if (parsed instanceof type.errors) {
+    throw new SystemOneError(
+      "parse-error",
+      `createSystemOneAdapter: invalid config: ${parsed.summary}`,
+    );
+  }
+  return createSystemOneProviderAdapter(parsed);
 }
 
 // Deployment quirks a hub offering carries for this provider. `questions`

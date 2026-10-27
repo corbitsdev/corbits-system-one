@@ -114,11 +114,60 @@ export const BooleanQuestion = type({
 }).narrow((q) => nonEmpty(q.instructions));
 export type BooleanQuestion = typeof BooleanQuestion.infer;
 
+// Locates a region in an image. Edges come back as fractions of the image.
+// Callers should set the model to `jev-preview`; the client does not require it.
+export const BoxQuestion = type({
+  id: "string",
+  type: "'box'",
+  instructions: Description,
+  "+": "reject",
+}).narrow((q) => nonEmpty(q.instructions));
+export type BoxQuestion = typeof BoxQuestion.infer;
+
+// Keyed decisions questions: choice, noul, score, or box only. Extraction-style
+// helpers are not part of this contract and fail the union.
+export const DecisionQuestion = type({
+  type: "'choice'",
+  instructions: "unknown",
+  criteria: "unknown",
+  "+": "reject",
+})
+  .or(
+    type({
+      type: "'noul'",
+      "instructions?": "unknown",
+      "criteria?": "unknown",
+      "+": "reject",
+    }),
+  )
+  .or(
+    type({
+      type: "'score'",
+      instructions: "unknown",
+      criteria: "unknown",
+      "+": "reject",
+    }),
+  )
+  .or(
+    type({
+      type: "'box'",
+      instructions: "unknown",
+      "+": "reject",
+    }),
+  );
+export type DecisionQuestion = typeof DecisionQuestion.infer;
+
+export const DecisionQuestionRecord = type({
+  "[string]": DecisionQuestion,
+}).narrow((qs) => Object.keys(qs).length >= 1);
+export type DecisionQuestionRecord = typeof DecisionQuestionRecord.infer;
+
 // The question union a caller may ask in one evaluation. `.or` chains keep
 // each branch's literal `type`, so the union still discriminates on it.
 export const Question = ChoiceQuestion.or(ScoreQuestion)
   .or(NoulQuestion)
-  .or(BooleanQuestion);
+  .or(BooleanQuestion)
+  .or(BoxQuestion);
 export type Question = typeof Question.infer;
 
 // A non-empty question list with unique ids: a duplicate would make the
@@ -138,10 +187,13 @@ export type QuestionList = typeof QuestionList.infer;
 // `gateway` the proxy endpoint, `custom` a caller-supplied URL. `url` only
 // exists on `custom` — a `url` on another kind would be silently ignored,
 // so the schema rejects it instead of accepting misleading config.
+// `auth: "none"` exists only on `custom`: it is the explicit opt-out from
+// the fail-closed key requirement. Official and gateway cannot carry it.
 export const EndpointConfig = type({
   kind: "'custom'",
   url: "string",
   "model?": "string",
+  "auth?": "'none'",
   "+": "reject",
 }).or(
   type({
@@ -186,18 +238,25 @@ export type EvaluateInput = typeof EvaluateInput.infer;
 
 /** One question in wire form: no id (the map key carries it). */
 export const WireQuestion = type({
-  type: "'noul' | 'choice' | 'score'",
+  type: "'noul' | 'choice' | 'score' | 'box'",
   instructions: Description,
   "criteria?": "unknown",
   "+": "reject",
 });
 export type WireQuestion = typeof WireQuestion.infer;
 
-/** The exact POST body: model + state + id-keyed questions. */
+const WireAsset = type({
+  type: "'image'",
+  part: "string",
+  "+": "reject",
+});
+
+/** The exact POST body: model + state + id-keyed questions, plus image parts. */
 export const WireRequest = type({
   model: "string",
   state: State,
   questions: { "[string]": WireQuestion },
+  "assets?": { "[string]": WireAsset },
   "+": "reject",
 }).narrow((body) => Object.keys(body.questions).length >= 1);
 export type WireRequest = typeof WireRequest.infer;
@@ -215,7 +274,9 @@ export function toWireQuestions(
       type: question.type === "boolean" ? "noul" : question.type,
       instructions: question.instructions,
     };
-    if (question.criteria !== undefined) mapped.criteria = question.criteria;
+    if ("criteria" in question && question.criteria !== undefined) {
+      mapped.criteria = question.criteria;
+    }
     wire[question.id] = mapped;
   }
   return wire;
@@ -247,15 +308,41 @@ export const APPROXIMATE_SUM_TOLERANCE = 0.02;
 // `type` must carry. No `"+": "reject"`: the backend may attach per-answer
 // metadata that `toDecision` strips.
 export const WireAnswer = type({
-  type: "'noul' | 'choice' | 'score'",
+  type: "'noul' | 'choice' | 'score' | 'box'",
   "choice?": "string",
   "score?": "number",
   "noul?": Confidence,
   "probabilities?": ProbabilityMap,
-  "confidence?": Confidence,
+  "confidence?": Confidence.or("null"),
   "legend?": { "[string]": "string" },
+  "box?": {
+    top: "number",
+    bottom: "number",
+    left: "number",
+    right: "number",
+  },
 });
 export type WireAnswer = typeof WireAnswer.infer;
+
+/** Box edges are fractions of the image. Shared by `evaluate` and the adapter. */
+export function boxEdgesOutOfRange(
+  id: string,
+  box: { top: number; bottom: number; left: number; right: number },
+): string | undefined {
+  for (const edge of ["top", "bottom", "left", "right"] as const) {
+    const value = box[edge];
+    if (!Number.isFinite(value) || value < 0 || value > 1) {
+      return `answer "${id}" box.${edge} ${String(value)} outside [0, 1]`;
+    }
+  }
+  if (box.top >= box.bottom) {
+    return `answer "${id}" box.top ${String(box.top)} is not below box.bottom ${String(box.bottom)}`;
+  }
+  if (box.left >= box.right) {
+    return `answer "${id}" box.left ${String(box.left)} is not left of box.right ${String(box.right)}`;
+  }
+  return undefined;
+}
 
 // Token usage reported on the response envelope.
 export const WireUsage = type({
@@ -305,6 +392,21 @@ export const Decision = type({
       confidence: Confidence,
       "+": "reject",
     }),
+  )
+  .or(
+    type({
+      id: "string",
+      type: "'box'",
+      box: {
+        top: "number",
+        bottom: "number",
+        left: "number",
+        right: "number",
+        "+": "reject",
+      },
+      confidence: Confidence.or("null"),
+      "+": "reject",
+    }),
   );
 export type Decision = typeof Decision.infer;
 
@@ -325,6 +427,13 @@ export function toDecision(id: string, answer: WireAnswer): Decision {
       choice: answer.choice,
       probabilities: answer.probabilities,
       confidence: answer.confidence,
+    };
+  } else if (answer.type === "box") {
+    candidate = {
+      id,
+      type: "box",
+      box: answer.box,
+      confidence: answer.confidence ?? null,
     };
   } else {
     candidate = {

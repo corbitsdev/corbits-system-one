@@ -69,6 +69,8 @@ export type ResolvedEndpoint = {
   url: string;
   backend: "corbits-system-one" | "gateway" | "custom";
   model: string;
+  /** `none` only when a custom endpoint explicitly opts out of a key. */
+  auth: "key" | "none";
 };
 
 /**
@@ -79,6 +81,8 @@ export type ResolvedEndpoint = {
  * distinguishes caller-routed traffic from the official endpoint —
  * `'gateway'` is reserved for the proxy quirks path. The model always
  * resolves here: a `custom` target without one sends `typesafe-ai/jev`.
+ * `auth` is `"none"` only when the caller set `auth: "none"` on a custom
+ * endpoint; every other target still requires a key.
  */
 export function resolveEndpoint(endpoint?: EndpointConfig): ResolvedEndpoint {
   if (endpoint?.kind === "custom") {
@@ -92,6 +96,7 @@ export function resolveEndpoint(endpoint?: EndpointConfig): ResolvedEndpoint {
       url: endpoint.url,
       backend: "custom",
       model: endpoint.model ?? GATEWAY_QUIRKS.model,
+      auth: endpoint.auth === "none" ? "none" : "key",
     };
   }
   const kind = endpoint?.kind ?? "official";
@@ -108,5 +113,6 @@ export function resolveEndpoint(endpoint?: EndpointConfig): ResolvedEndpoint {
     url,
     backend: kind === "gateway" ? "gateway" : "corbits-system-one",
     model: endpoint?.model ?? quirks.model,
+    auth: "key",
   };
 }
